@@ -14,31 +14,78 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, Code } from "@astrojs/starlight/components";
+import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
 
 ## What you get
 
 <CardGrid stagger>
   <Card title="AI Terminal" icon="laptop">
-    Embed a fully functional web terminal with built-in AI assistant into any web app. Supports command execution, threat detection, and session recording — all via `<iframe>` or JS SDK.
+    Embed a fully functional web terminal with built-in AI assistant into any web app. Supports command execution, threat detection, and session recording.
   </Card>
   <Card title="RAG Code Search" icon="magnifier">
-    Index your codebase and search by intent, not keywords. Ask "where is the auth middleware?" and get exact file + line results. Powered by vector embeddings and Qdrant.
+    Index your codebase and search by intent, not keywords. Ask "where is the auth middleware?" and get exact file + line results.
+  </Card>
+  <Card title="React / Vue / Angular" icon="puzzle">
+    Native components for your framework. Or use the core SDK directly for vanilla JS.
   </Card>
 </CardGrid>
 
-## Ship in 3 lines
+## Pick your framework
 
-```typescript
-import { WorkAGI } from "@working-with-agi/sdk";
+<Tabs>
+  <TabItem label="React">
+  ```tsx
+  import { AgiTerminal, useCodeSearch } from "@working-with-agi/react";
 
-// Embed an AI terminal
-WorkAGI.terminal("#my-terminal", { theme: "dark" });
+  function App() {
+    const { search } = useCodeSearch();
+    return <AgiTerminal theme="dark" ai onThreat={console.warn} />;
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiTerminal, useCodeSearch } from "@working-with-agi/vue";
+  const { search } = useCodeSearch();
+  </script>
 
-// Search code by intent
-const hits = await WorkAGI.search("retry logic for failed payments");
-// → [{ file: "src/billing/retry.ts", line: 42, score: 0.94, snippet: "..." }]
-```
+  <template>
+    <AgiTerminal theme="dark" ai @threat="console.warn" />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```typescript
+  import { AgiTerminalComponent, CodeSearchService } from "@working-with-agi/angular";
+
+  @Component({
+    imports: [AgiTerminalComponent],
+    template: `<agi-terminal theme="dark" [ai]="true" (threat)="onThreat($event)" />`,
+  })
+  export class AppComponent {
+    constructor(private codeSearch: CodeSearchService) {}
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  WorkAGI.terminal("#my-terminal", { theme: "dark", ai: true });
+  const hits = await WorkAGI.search("retry logic for failed payments");
+  ```
+  </TabItem>
+</Tabs>
+
+## Packages
+
+| Package | Description |
+|---|---|
+| `@working-with-agi/sdk` | Core SDK — vanilla JS, framework-agnostic |
+| `@working-with-agi/react` | React components + hooks |
+| `@working-with-agi/vue` | Vue 3 components + composables |
+| `@working-with-agi/angular` | Angular components + services |
 
 ## Who is this for?
 

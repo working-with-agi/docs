@@ -1,89 +1,220 @@
 ---
 title: Quick Start
-description: Get up and running with WorkWithAI in minutes
+description: Get up and running with WorkWithAGI SDK
 ---
 
 import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
-## Installation
+## Install
 
-<Steps>
+<Tabs>
+  <TabItem label="React">
+  ```bash
+  npm install @working-with-agi/react
+  ```
+  </TabItem>
+  <TabItem label="Vue">
+  ```bash
+  npm install @working-with-agi/vue
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```bash
+  npm install @working-with-agi/angular
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```bash
+  npm install @working-with-agi/sdk
+  ```
+  </TabItem>
+</Tabs>
 
-1. **Install the SDK**
+## AI Terminal
 
-   <Tabs>
-     <TabItem label="npm">
-     ```bash
-     npm install @aether-platform/workai-sdk
-     ```
-     </TabItem>
-     <TabItem label="pip">
-     ```bash
-     pip install workai-sdk
-     ```
-     </TabItem>
-     <TabItem label="Helm">
-     ```bash
-     helm repo add workai https://charts.aether-platform.com
-     helm install workai workai/workai-stack
-     ```
-     </TabItem>
-   </Tabs>
+<Tabs>
+  <TabItem label="React">
+  ```tsx
+  import { AgiTerminal } from "@working-with-agi/react";
 
-2. **Configure your API key**
+  export default function Terminal() {
+    return (
+      <AgiTerminal
+        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
+        theme="dark"
+        ai
+        recording
+        onCommand={(cmd) => console.log("Command:", cmd)}
+        onThreat={(alert) => notifyAdmin(alert)}
+      />
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiTerminal } from "@working-with-agi/vue";
+  </script>
 
-   ```bash
-   export WORKAI_API_KEY="your-api-key"
-   ```
+  <template>
+    <AgiTerminal
+      :api-key="agiKey"
+      theme="dark"
+      ai
+      recording
+      @command="(cmd) => console.log('Command:', cmd)"
+      @threat="(alert) => notifyAdmin(alert)"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```typescript
+  import { Component } from "@angular/core";
+  import { AgiTerminalComponent } from "@working-with-agi/angular";
 
-3. **Initialize in your project**
+  @Component({
+    imports: [AgiTerminalComponent],
+    template: `
+      <agi-terminal
+        [apiKey]="apiKey"
+        theme="dark"
+        [ai]="true"
+        [recording]="true"
+        (command)="onCommand($event)"
+        (threat)="onThreat($event)"
+      />
+    `,
+  })
+  export class TerminalPage {
+    apiKey = environment.agiKey;
+    onCommand(cmd: string) { console.log("Command:", cmd); }
+    onThreat(alert: any) { notifyAdmin(alert); }
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
 
-   <Tabs>
-     <TabItem label="TypeScript">
-     ```typescript
-     import { WorkAI } from "@aether-platform/workai-sdk";
+  const terminal = WorkAGI.terminal("#terminal", {
+    apiKey: "your-api-key",
+    theme: "dark",
+    ai: true,
+    recording: true,
+    onCommand: (cmd) => console.log("Command:", cmd),
+    onThreat: (alert) => notifyAdmin(alert),
+  });
 
-     const workai = new WorkAI({
-       apiKey: process.env.WORKAI_API_KEY,
-       tenant: "your-tenant-id",
-     });
-     ```
-     </TabItem>
-     <TabItem label="Python">
-     ```python
-     from workai_sdk import WorkAI
+  // Programmatic control
+  await terminal.execute("ls -la");
+  terminal.dispose();
+  ```
+  </TabItem>
+</Tabs>
 
-     workai = WorkAI(
-         api_key=os.environ["WORKAI_API_KEY"],
-         tenant="your-tenant-id",
-     )
-     ```
-     </TabItem>
-   </Tabs>
+## RAG Code Search
 
-4. **Start using components**
+<Tabs>
+  <TabItem label="React">
+  ```tsx
+  import { useCodeSearch } from "@working-with-agi/react";
 
-   ```typescript
-   // Embed AI Terminal
-   const terminal = workai.terminal.create({
-     container: "#terminal",
-     theme: "dark",
-   });
+  export default function Search() {
+    const { search, results, loading } = useCodeSearch({
+      apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
+      index: "my-project",
+    });
 
-   // Run semantic search
-   const results = await workai.search("authentication middleware");
+    return (
+      <div>
+        <input onChange={(e) => search(e.target.value)} placeholder="Search code..." />
+        {results.map((hit) => (
+          <div key={hit.file + hit.line}>
+            <code>{hit.file}:{hit.line}</code> — {hit.snippet}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { useCodeSearch } from "@working-with-agi/vue";
 
-   // Dispatch an agent task
-   const task = await workai.agents.run({
-     role: "reviewer",
-     target: "src/auth/",
-   });
-   ```
+  const { search, results, loading } = useCodeSearch({
+    apiKey: agiKey,
+    index: "my-project",
+  });
+  </script>
 
-</Steps>
+  <template>
+    <input @input="search($event.target.value)" placeholder="Search code..." />
+    <div v-for="hit in results" :key="hit.file + hit.line">
+      <code>{{ hit.file }}:{{ hit.line }}</code> — {{ hit.snippet }}
+    </div>
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```typescript
+  import { Component } from "@angular/core";
+  import { CodeSearchService } from "@working-with-agi/angular";
+
+  @Component({
+    template: `
+      <input (input)="onSearch($event)" placeholder="Search code..." />
+      <div *ngFor="let hit of results">
+        <code>{{ hit.file }}:{{ hit.line }}</code> — {{ hit.snippet }}
+      </div>
+    `,
+  })
+  export class SearchPage {
+    results: any[] = [];
+    constructor(private codeSearch: CodeSearchService) {}
+    async onSearch(event: Event) {
+      const query = (event.target as HTMLInputElement).value;
+      this.results = await this.codeSearch.search(query);
+    }
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  const search = WorkAGI.codeSearch({
+    apiKey: "your-api-key",
+    index: "my-project",
+  });
+
+  const results = await search.query("error handling for API timeouts");
+  // → [{ file, line, score, snippet }]
+  ```
+  </TabItem>
+</Tabs>
+
+## Self-Hosted Setup
+
+To run the backend infrastructure on your own servers:
+
+```bash
+# Clone the stack
+git clone https://github.com/working-with-agi/self-hosted.git
+cd self-hosted
+
+# Start everything (terminal server + RAG pipeline + Qdrant)
+docker compose up -d
+
+# Index your codebase
+docker compose exec indexer grepai index /path/to/your/code
+```
 
 ## Next Steps
 
-- [Integration Guide](/integration/) — Deep dive into each component
 - [Features](/features/) — Full feature reference
-- [Showcase](/showcase/) — See real-world examples
+- [Integration Guide](/integration/) — Advanced configuration
+- [Showcase](/showcase/) — Real-world examples

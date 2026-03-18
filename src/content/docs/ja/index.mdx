@@ -3,7 +3,7 @@ title: WorkWithAGI SDK
 description: AI ターミナルとセマンティックコード検索をアプリに組み込む
 template: splash
 hero:
-  tagline: AI ターミナルと RAG コード検索をたった3行で。すぐに出荷できる SDK。
+  tagline: AI ターミナルと RAG コード検索を、お好みのフレームワークで。すぐに出荷できる SDK。
   actions:
     - text: はじめる
       link: /ja/getting-started/
@@ -14,33 +14,80 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
 
 ## 何が手に入るか
 
 <CardGrid stagger>
   <Card title="AI ターミナル" icon="laptop">
-    AI アシスタント内蔵の Web ターミナルを、任意の Web アプリに埋め込み。コマンド実行、脅威検知、セッション記録に対応。`<iframe>` または JS SDK で統合。
+    AI アシスタント内蔵の Web ターミナルを、任意の Web アプリに埋め込み。コマンド実行、脅威検知、セッション記録に対応。
   </Card>
   <Card title="RAG コード検索" icon="magnifier">
-    コードベースをインデックスし、キーワードではなく意図で検索。「認証ミドルウェアはどこ？」と聞けば、ファイル名と行番号が返る。ベクトル埋め込み + Qdrant で動作。
+    コードベースをインデックスし、キーワードではなく意図で検索。「認証ミドルウェアはどこ？」と聞けば、ファイル名と行番号が返る。
+  </Card>
+  <Card title="React / Vue / Angular" icon="puzzle">
+    お使いのフレームワーク向けネイティブコンポーネント。バニラ JS ならコア SDK を直接利用。
   </Card>
 </CardGrid>
 
-## 3行で出荷
+## フレームワークを選択
 
-```typescript
-import { WorkAGI } from "@working-with-agi/sdk";
+<Tabs>
+  <TabItem label="React">
+  ```tsx
+  import { AgiTerminal, useCodeSearch } from "@working-with-agi/react";
 
-// AI ターミナルを埋め込み
-WorkAGI.terminal("#my-terminal", { theme: "dark" });
+  function App() {
+    const { search } = useCodeSearch();
+    return <AgiTerminal theme="dark" ai onThreat={console.warn} />;
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiTerminal, useCodeSearch } from "@working-with-agi/vue";
+  const { search } = useCodeSearch();
+  </script>
 
-// 意図でコード検索
-const hits = await WorkAGI.search("決済失敗時のリトライロジック");
-// → [{ file: "src/billing/retry.ts", line: 42, score: 0.94, snippet: "..." }]
-```
+  <template>
+    <AgiTerminal theme="dark" ai @threat="console.warn" />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```typescript
+  import { AgiTerminalComponent, CodeSearchService } from "@working-with-agi/angular";
 
-## 誰のためのSDKか？
+  @Component({
+    imports: [AgiTerminalComponent],
+    template: `<agi-terminal theme="dark" [ai]="true" (threat)="onThreat($event)" />`,
+  })
+  export class AppComponent {
+    constructor(private codeSearch: CodeSearchService) {}
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  WorkAGI.terminal("#my-terminal", { theme: "dark", ai: true });
+  const hits = await WorkAGI.search("決済失敗時のリトライロジック");
+  ```
+  </TabItem>
+</Tabs>
+
+## パッケージ
+
+| パッケージ | 説明 |
+|---|---|
+| `@working-with-agi/sdk` | コア SDK — バニラ JS、フレームワーク非依存 |
+| `@working-with-agi/react` | React コンポーネント + hooks |
+| `@working-with-agi/vue` | Vue 3 コンポーネント + composables |
+| `@working-with-agi/angular` | Angular コンポーネント + services |
+
+## 誰のための SDK か？
 
 - **社内開発プラットフォームを構築中？** AI ターミナル + コード検索をゼロから作らず追加。
 - **開発者ツールを出荷中？** インテリジェントなコードナビゲーションを製品に組み込み。
