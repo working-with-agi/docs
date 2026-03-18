@@ -33,7 +33,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler pages project create working-with-ai --production-branch=main 2>/dev/null || true
+        run: npx wrangler pages project create working-with-agi --production-branch=main 2>/dev/null || true
 
       - name: Deploy to Cloudflare Pages
         id: deploy
@@ -41,7 +41,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx wrangler pages deploy dist --project-name=working-with-ai --branch=${{ github.head_ref || github.ref_name }} | tee /tmp/deploy.log
+          npx wrangler pages deploy dist --project-name=working-with-agi --branch=${{ github.head_ref || github.ref_name }} | tee /tmp/deploy.log
           echo "url=$(grep -oP 'https://[^\s]+\.pages\.dev' /tmp/deploy.log | head -1)" >> "$GITHUB_OUTPUT"
 
       - name: Notify Slack (success)
@@ -52,13 +52,13 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": ":white_check_mark: *working-with-ai* deploy succeeded",
+              "text": ":white_check_mark: *working-with-agi* deploy succeeded",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":white_check_mark: *working-with-ai* deploy succeeded\n*Branch:* `${{ github.ref_name }}`\n*Commit:* `${{ github.sha }}` by ${{ github.actor }}\n*URL:* ${{ steps.deploy.outputs.url }}\n*Action:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                    "text": ":white_check_mark: *working-with-agi* deploy succeeded\n*Branch:* `${{ github.ref_name }}`\n*Commit:* `${{ github.sha }}` by ${{ github.actor }}\n*URL:* ${{ steps.deploy.outputs.url }}\n*Action:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
                   }
                 }
               ]
@@ -72,13 +72,13 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": ":x: *working-with-ai* deploy FAILED",
+              "text": ":x: *working-with-agi* deploy FAILED",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":x: *working-with-ai* deploy *FAILED*\n*Branch:* `${{ github.ref_name }}`\n*Commit:* `${{ github.sha }}` by ${{ github.actor }}\n*Action:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+                    "text": ":x: *working-with-agi* deploy *FAILED*\n*Branch:* `${{ github.ref_name }}`\n*Commit:* `${{ github.sha }}` by ${{ github.actor }}\n*Action:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
                   }
                 }
               ]
