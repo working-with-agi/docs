@@ -1,0 +1,89 @@
+---
+title: Quick Start
+description: Get up and running with WorkWithAI in minutes
+---
+
+import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+## Installation
+
+<Steps>
+
+1. **Install the SDK**
+
+   <Tabs>
+     <TabItem label="npm">
+     ```bash
+     npm install @aether-platform/workai-sdk
+     ```
+     </TabItem>
+     <TabItem label="pip">
+     ```bash
+     pip install workai-sdk
+     ```
+     </TabItem>
+     <TabItem label="Helm">
+     ```bash
+     helm repo add workai https://charts.aether-platform.com
+     helm install workai workai/workai-stack
+     ```
+     </TabItem>
+   </Tabs>
+
+2. **Configure your API key**
+
+   ```bash
+   export WORKAI_API_KEY="your-api-key"
+   ```
+
+3. **Initialize in your project**
+
+   <Tabs>
+     <TabItem label="TypeScript">
+     ```typescript
+     import { WorkAI } from "@aether-platform/workai-sdk";
+
+     const workai = new WorkAI({
+       apiKey: process.env.WORKAI_API_KEY,
+       tenant: "your-tenant-id",
+     });
+     ```
+     </TabItem>
+     <TabItem label="Python">
+     ```python
+     from workai_sdk import WorkAI
+
+     workai = WorkAI(
+         api_key=os.environ["WORKAI_API_KEY"],
+         tenant="your-tenant-id",
+     )
+     ```
+     </TabItem>
+   </Tabs>
+
+4. **Start using components**
+
+   ```typescript
+   // Embed AI Terminal
+   const terminal = workai.terminal.create({
+     container: "#terminal",
+     theme: "dark",
+   });
+
+   // Run semantic search
+   const results = await workai.search("authentication middleware");
+
+   // Dispatch an agent task
+   const task = await workai.agents.run({
+     role: "reviewer",
+     target: "src/auth/",
+   });
+   ```
+
+</Steps>
+
+## Next Steps
+
+- [Integration Guide](/integration/) — Deep dive into each component
+- [Features](/features/) — Full feature reference
+- [Showcase](/showcase/) — See real-world examples

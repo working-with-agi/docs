@@ -1,0 +1,60 @@
+---
+title: Features
+description: Complete feature list of WorkWithAI components
+---
+
+import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
+
+## Component Features
+
+<Tabs>
+  <TabItem label="AI Terminal">
+    - Web-based terminal with PTY support
+    - Real-time AI assistance via Claude
+    - Threat detection and command filtering
+    - Session recording and playback
+    - Embeddable via iframe or JavaScript SDK
+    - WebSocket (Socket.IO) transport
+    - Customizable themes and keybindings
+  </TabItem>
+  <TabItem label="Agent System">
+    - Multi-agent orchestration (Claude Code SDK)
+    - Built-in agent roles: Developer, Reviewer, Tester, Architect
+    - Custom agent definition via YAML
+    - Async task execution with progress streaming
+    - Agent-to-agent delegation
+    - Conversation history and context management
+  </TabItem>
+  <TabItem label="MCP Servers">
+    - Process management (Circus, Supervisord)
+    - Semantic code search (GrepAI + Qdrant)
+    - Documentation access (Context7)
+    - Custom MCP server SDK
+    - stdio and SSE transport
+  </TabItem>
+  <TabItem label="RAG Pipeline">
+    - Automatic codebase indexing
+    - Incremental file watching
+    - OpenVINO-accelerated embeddings
+    - Qdrant vector storage
+    - Tenant-isolated collections
+    - Call graph tracing
+  </TabItem>
+</Tabs>
+
+## Platform Capabilities
+
+<CardGrid>
+  <Card title="Multi-Tenant" icon="random">
+    Full tenant isolation with dedicated vector stores, namespaced resources, and per-tenant configuration.
+  </Card>
+  <Card title="Observability" icon="magnifier">
+    Structured logging, OpenTelemetry traces, and Prometheus metrics across all components.
+  </Card>
+  <Card title="Security" icon="approve-check">
+    Zero-trust architecture, proxy-based auth, audit logging, and secret management via Vault.
+  </Card>
+  <Card title="Kubernetes Native" icon="setting">
+    Helm charts, Skaffold dev loops, and production-grade manifests for every component.
+  </Card>
+</CardGrid>

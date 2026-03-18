@@ -1,0 +1,89 @@
+---
+title: インテグレーションガイド
+description: WorkWithAI コンポーネントをアプリケーションに統合する詳細ガイド
+---
+
+## AI ターミナルの埋め込み
+
+### iframe 統合
+
+AI ターミナルを埋め込む最もシンプルな方法:
+
+```html
+<iframe
+  src="https://terminal.workai.dev/embed?tenant=YOUR_TENANT"
+  width="100%"
+  height="500"
+  allow="clipboard-read; clipboard-write"
+></iframe>
+```
+
+### SDK 統合
+
+ターミナルのライフサイクルを完全に制御:
+
+```typescript
+import { WorkAI } from "@aether-platform/workai-sdk";
+
+const workai = new WorkAI({ apiKey: "...", tenant: "..." });
+
+const terminal = workai.terminal.create({
+  container: document.getElementById("terminal"),
+  theme: "dark",
+  fontSize: 14,
+  aiAssistant: true,
+  sessionRecording: true,
+  onCommand: (cmd) => console.log("Command:", cmd),
+  onThreat: (alert) => notifySecurityTeam(alert),
+});
+
+// プログラムからの操作
+await terminal.execute("ls -la");
+terminal.dispose();
+```
+
+## エージェントシステムの統合
+
+```typescript
+const agent = workai.agents.create({
+  role: "reviewer",
+  model: "claude-sonnet-4-6",
+  tools: ["read_file", "search_code", "run_tests"],
+});
+
+const result = await agent.run({
+  task: "認証モジュールのセキュリティ問題をレビュー",
+  target: "src/auth/",
+  output: "markdown",
+});
+
+console.log(result.findings);
+```
+
+## MCP サーバーのセットアップ
+
+```yaml
+# workai-mcp.yaml
+servers:
+  code-search:
+    transport: sse
+    url: http://localhost:8808
+  process-manager:
+    transport: stdio
+    command: workai-mcp-circus
+```
+
+## RAG パイプラインの設定
+
+```typescript
+const rag = workai.rag.configure({
+  vectorStore: "qdrant",
+  embeddingModel: "bge-small-en-v1.5",
+  chunkSize: 512,
+  watchPaths: ["src/", "docs/"],
+  excludePatterns: ["node_modules/", "*.min.js"],
+});
+
+await rag.index();
+const results = await rag.search("エラーハンドリングパターン");
+```

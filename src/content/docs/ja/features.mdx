@@ -1,0 +1,60 @@
+---
+title: 機能一覧
+description: WorkWithAI コンポーネントの全機能リスト
+---
+
+import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
+
+## コンポーネント機能
+
+<Tabs>
+  <TabItem label="AI ターミナル">
+    - PTY 対応の Web ベースターミナル
+    - Claude によるリアルタイム AI アシスタント
+    - 脅威検知とコマンドフィルタリング
+    - セッション記録と再生
+    - iframe または JavaScript SDK で埋め込み可能
+    - WebSocket (Socket.IO) トランスポート
+    - カスタマイズ可能なテーマとキーバインド
+  </TabItem>
+  <TabItem label="エージェントシステム">
+    - マルチエージェントオーケストレーション (Claude Code SDK)
+    - 標準エージェントロール: Developer, Reviewer, Tester, Architect
+    - YAML によるカスタムエージェント定義
+    - 進捗ストリーミング付き非同期タスク実行
+    - エージェント間デリゲーション
+    - 会話履歴とコンテキスト管理
+  </TabItem>
+  <TabItem label="MCP サーバー">
+    - プロセス管理 (Circus, Supervisord)
+    - セマンティックコード検索 (GrepAI + Qdrant)
+    - ドキュメントアクセス (Context7)
+    - カスタム MCP サーバー SDK
+    - stdio / SSE トランスポート
+  </TabItem>
+  <TabItem label="RAG パイプライン">
+    - コードベースの自動インデックス
+    - ファイル監視による増分更新
+    - OpenVINO アクセラレーテッド埋め込み
+    - Qdrant ベクトルストレージ
+    - テナント分離コレクション
+    - コールグラフトレーシング
+  </TabItem>
+</Tabs>
+
+## プラットフォーム機能
+
+<CardGrid>
+  <Card title="マルチテナント" icon="random">
+    専用ベクトルストア、名前空間リソース、テナントごとの設定による完全なテナント分離。
+  </Card>
+  <Card title="可観測性" icon="magnifier">
+    全コンポーネントにわたる構造化ログ、OpenTelemetry トレース、Prometheus メトリクス。
+  </Card>
+  <Card title="セキュリティ" icon="approve-check">
+    ゼロトラストアーキテクチャ、プロキシベース認証、監査ログ、Vault によるシークレット管理。
+  </Card>
+  <Card title="Kubernetes ネイティブ" icon="setting">
+    全コンポーネント向けの Helm チャート、Skaffold 開発ループ、プロダクショングレードマニフェスト。
+  </Card>
+</CardGrid>

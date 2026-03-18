@@ -1,0 +1,89 @@
+---
+title: クイックスタート
+description: 数分で WorkWithAI を使い始める
+---
+
+import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+## インストール
+
+<Steps>
+
+1. **SDK をインストール**
+
+   <Tabs>
+     <TabItem label="npm">
+     ```bash
+     npm install @aether-platform/workai-sdk
+     ```
+     </TabItem>
+     <TabItem label="pip">
+     ```bash
+     pip install workai-sdk
+     ```
+     </TabItem>
+     <TabItem label="Helm">
+     ```bash
+     helm repo add workai https://charts.aether-platform.com
+     helm install workai workai/workai-stack
+     ```
+     </TabItem>
+   </Tabs>
+
+2. **API キーを設定**
+
+   ```bash
+   export WORKAI_API_KEY="your-api-key"
+   ```
+
+3. **プロジェクトで初期化**
+
+   <Tabs>
+     <TabItem label="TypeScript">
+     ```typescript
+     import { WorkAI } from "@aether-platform/workai-sdk";
+
+     const workai = new WorkAI({
+       apiKey: process.env.WORKAI_API_KEY,
+       tenant: "your-tenant-id",
+     });
+     ```
+     </TabItem>
+     <TabItem label="Python">
+     ```python
+     from workai_sdk import WorkAI
+
+     workai = WorkAI(
+         api_key=os.environ["WORKAI_API_KEY"],
+         tenant="your-tenant-id",
+     )
+     ```
+     </TabItem>
+   </Tabs>
+
+4. **コンポーネントを使い始める**
+
+   ```typescript
+   // AI ターミナルを埋め込み
+   const terminal = workai.terminal.create({
+     container: "#terminal",
+     theme: "dark",
+   });
+
+   // セマンティック検索を実行
+   const results = await workai.search("認証ミドルウェア");
+
+   // エージェントタスクを実行
+   const task = await workai.agents.run({
+     role: "reviewer",
+     target: "src/auth/",
+   });
+   ```
+
+</Steps>
+
+## 次のステップ
+
+- [インテグレーションガイド](/ja/integration/) — 各コンポーネントの詳細
+- [機能一覧](/ja/features/) — 全機能リファレンス
+- [ショーケース](/ja/showcase/) — 実践事例
