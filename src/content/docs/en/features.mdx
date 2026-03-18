@@ -1,60 +1,84 @@
 ---
 title: Features
-description: Complete feature list of WorkWithAI components
+description: Complete feature reference for WorkWithAGI SDK
 ---
 
-import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-## Component Features
+## AI Terminal
 
 <Tabs>
-  <TabItem label="AI Terminal">
-    - Web-based terminal with PTY support
-    - Real-time AI assistance via Claude
-    - Threat detection and command filtering
-    - Session recording and playback
-    - Embeddable via iframe or JavaScript SDK
-    - WebSocket (Socket.IO) transport
-    - Customizable themes and keybindings
+  <TabItem label="Core">
+    - Full PTY terminal (bash, zsh, fish — whatever the server runs)
+    - WebSocket transport via Socket.IO
+    - Works in any modern browser
+    - Responsive — adapts to container size
   </TabItem>
-  <TabItem label="Agent System">
-    - Multi-agent orchestration (Claude Code SDK)
-    - Built-in agent roles: Developer, Reviewer, Tester, Architect
-    - Custom agent definition via YAML
-    - Async task execution with progress streaming
-    - Agent-to-agent delegation
-    - Conversation history and context management
+  <TabItem label="AI Assistant">
+    - Context-aware AI powered by Claude
+    - Suggests commands based on conversation
+    - Explains errors inline
+    - Configurable system prompts and guardrails
   </TabItem>
-  <TabItem label="MCP Servers">
-    - Process management (Circus, Supervisord)
-    - Semantic code search (GrepAI + Qdrant)
-    - Documentation access (Context7)
-    - Custom MCP server SDK
-    - stdio and SSE transport
+  <TabItem label="Security">
+    - Real-time threat detection on commands
+    - Configurable command allowlists/blocklists
+    - Session recording with full replay
+    - Audit log export (JSON, CSV)
   </TabItem>
-  <TabItem label="RAG Pipeline">
-    - Automatic codebase indexing
-    - Incremental file watching
-    - OpenVINO-accelerated embeddings
-    - Qdrant vector storage
-    - Tenant-isolated collections
-    - Call graph tracing
+  <TabItem label="Embedding">
+    - iframe embed (zero config)
+    - JavaScript SDK (full lifecycle control)
+    - Custom themes (dark, light, custom CSS)
+    - Configurable keybindings
+    - Event hooks: `onCommand`, `onThreat`, `onConnect`, `onDisconnect`
   </TabItem>
 </Tabs>
 
-## Platform Capabilities
+## RAG Code Search
 
-<CardGrid>
-  <Card title="Multi-Tenant" icon="random">
-    Full tenant isolation with dedicated vector stores, namespaced resources, and per-tenant configuration.
-  </Card>
-  <Card title="Observability" icon="magnifier">
-    Structured logging, OpenTelemetry traces, and Prometheus metrics across all components.
-  </Card>
-  <Card title="Security" icon="approve-check">
-    Zero-trust architecture, proxy-based auth, audit logging, and secret management via Vault.
-  </Card>
-  <Card title="Kubernetes Native" icon="setting">
-    Helm charts, Skaffold dev loops, and production-grade manifests for every component.
-  </Card>
-</CardGrid>
+<Tabs>
+  <TabItem label="Indexing">
+    - Automatic codebase indexing
+    - Incremental updates via file watcher
+    - Supports 20+ languages (TypeScript, Python, Go, Rust, Java, etc.)
+    - Configurable exclude patterns
+    - Chunk size tuning for optimal recall
+  </TabItem>
+  <TabItem label="Search">
+    - Semantic search — describe what code does, not exact text
+    - Returns: file path, line number, relevance score, code snippet
+    - Multi-language queries (English, Japanese, etc.)
+    - Filters by file type, directory, or project
+  </TabItem>
+  <TabItem label="Call Graph">
+    - Trace all callers of a function
+    - Trace all callees of a function
+    - Configurable depth (default: 3 levels)
+    - JSON output for tool integration
+  </TabItem>
+  <TabItem label="Infrastructure">
+    - OpenVINO-accelerated embeddings (bge-small-en-v1.5)
+    - Qdrant vector storage (self-hosted or managed)
+    - REST API for custom integrations
+    - Docker Compose for one-command setup
+  </TabItem>
+</Tabs>
+
+## SDK Options
+
+| Feature | iframe | JS SDK |
+|---|---|---|
+| AI Terminal | Yes | Yes |
+| RAG Code Search | — | Yes |
+| Custom themes | Limited | Full |
+| Event hooks | — | Yes |
+| Programmatic control | — | Yes |
+| Zero config | Yes | — |
+
+## Supported Environments
+
+- **Browser:** Chrome, Firefox, Safari, Edge (latest 2 versions)
+- **Server:** Node.js 18+, Python 3.10+
+- **Deployment:** Docker, Kubernetes (Helm charts), bare metal
+- **Self-hosted:** No external dependencies required

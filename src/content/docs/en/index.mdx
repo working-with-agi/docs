@@ -1,9 +1,9 @@
 ---
-title: WorkWithAI Component
-description: AI-native development components for your team
+title: WorkWithAGI SDK
+description: Embed AI terminals and semantic code search into your apps
 template: splash
 hero:
-  tagline: Ship AI-powered features faster with production-ready components
+  tagline: Drop-in SDK for AI-powered terminals and RAG code search. Three lines of code to ship.
   actions:
     - text: Get Started
       link: /getting-started/
@@ -14,21 +14,34 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from "@astrojs/starlight/components";
+import { Card, CardGrid, Code } from "@astrojs/starlight/components";
 
-## Why WorkWithAI?
+## What you get
 
 <CardGrid stagger>
-  <Card title="Production-Ready" icon="rocket">
-    Battle-tested components used in enterprise environments. Drop in, configure, deploy.
+  <Card title="AI Terminal" icon="laptop">
+    Embed a fully functional web terminal with built-in AI assistant into any web app. Supports command execution, threat detection, and session recording — all via `<iframe>` or JS SDK.
   </Card>
-  <Card title="AI-Native Architecture" icon="puzzle">
-    Built from the ground up for AI workflows — MCP, RAG, and agent orchestration included.
-  </Card>
-  <Card title="Framework Agnostic" icon="setting">
-    Works with React, Vue, Svelte, or vanilla JS. Your stack, your choice.
-  </Card>
-  <Card title="Enterprise Security" icon="approve-check">
-    Zero-trust design, tenant isolation, and full audit trail out of the box.
+  <Card title="RAG Code Search" icon="magnifier">
+    Index your codebase and search by intent, not keywords. Ask "where is the auth middleware?" and get exact file + line results. Powered by vector embeddings and Qdrant.
   </Card>
 </CardGrid>
+
+## Ship in 3 lines
+
+```typescript
+import { WorkAGI } from "@working-with-agi/sdk";
+
+// Embed an AI terminal
+WorkAGI.terminal("#my-terminal", { theme: "dark" });
+
+// Search code by intent
+const hits = await WorkAGI.search("retry logic for failed payments");
+// → [{ file: "src/billing/retry.ts", line: 42, score: 0.94, snippet: "..." }]
+```
+
+## Who is this for?
+
+- **Building an internal dev platform?** Add AI terminal + code search without building from scratch.
+- **Shipping a developer tool?** Embed intelligent code navigation into your product.
+- **Running a coding education platform?** Give students an AI-assisted terminal in the browser.

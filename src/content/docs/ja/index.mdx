@@ -1,9 +1,9 @@
 ---
-title: WorkWithAI Component
-description: チーム向け AI ネイティブ開発コンポーネント
+title: WorkWithAGI SDK
+description: AI ターミナルとセマンティックコード検索をアプリに組み込む
 template: splash
 hero:
-  tagline: プロダクション対応コンポーネントで、AI 機能を素早くリリース
+  tagline: AI ターミナルと RAG コード検索をたった3行で。すぐに出荷できる SDK。
   actions:
     - text: はじめる
       link: /ja/getting-started/
@@ -16,19 +16,32 @@ hero:
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
 
-## なぜ WorkWithAI なのか？
+## 何が手に入るか
 
 <CardGrid stagger>
-  <Card title="プロダクション対応" icon="rocket">
-    エンタープライズ環境で実証済みのコンポーネント。導入・設定・デプロイがすぐに可能です。
+  <Card title="AI ターミナル" icon="laptop">
+    AI アシスタント内蔵の Web ターミナルを、任意の Web アプリに埋め込み。コマンド実行、脅威検知、セッション記録に対応。`<iframe>` または JS SDK で統合。
   </Card>
-  <Card title="AI ネイティブ設計" icon="puzzle">
-    MCP、RAG、エージェントオーケストレーションを含む、AI ワークフロー専用の設計。
-  </Card>
-  <Card title="フレームワーク非依存" icon="setting">
-    React、Vue、Svelte、バニラ JS に対応。お好みのスタックで利用できます。
-  </Card>
-  <Card title="エンタープライズ・セキュリティ" icon="approve-check">
-    ゼロトラスト設計、テナント分離、完全な監査証跡を標準搭載。
+  <Card title="RAG コード検索" icon="magnifier">
+    コードベースをインデックスし、キーワードではなく意図で検索。「認証ミドルウェアはどこ？」と聞けば、ファイル名と行番号が返る。ベクトル埋め込み + Qdrant で動作。
   </Card>
 </CardGrid>
+
+## 3行で出荷
+
+```typescript
+import { WorkAGI } from "@working-with-agi/sdk";
+
+// AI ターミナルを埋め込み
+WorkAGI.terminal("#my-terminal", { theme: "dark" });
+
+// 意図でコード検索
+const hits = await WorkAGI.search("決済失敗時のリトライロジック");
+// → [{ file: "src/billing/retry.ts", line: 42, score: 0.94, snippet: "..." }]
+```
+
+## 誰のためのSDKか？
+
+- **社内開発プラットフォームを構築中？** AI ターミナル + コード検索をゼロから作らず追加。
+- **開発者ツールを出荷中？** インテリジェントなコードナビゲーションを製品に組み込み。
+- **コーディング教育プラットフォーム？** ブラウザ上で AI アシスト付きターミナルを学生に提供。

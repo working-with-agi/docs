@@ -4,7 +4,7 @@ import { defineConfig } from "astro/config";
 export default defineConfig({
   integrations: [
     starlight({
-      title: "WorkWithAI",
+      title: "WorkWithAGI",
       logo: {
         src: "./src/assets/logo-workai.png",
         replacesTitle: false,

@@ -1,60 +1,84 @@
 ---
 title: 機能一覧
-description: WorkWithAI コンポーネントの全機能リスト
+description: WorkWithAGI SDK の全機能リファレンス
 ---
 
-import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-## コンポーネント機能
+## AI ターミナル
 
 <Tabs>
-  <TabItem label="AI ターミナル">
-    - PTY 対応の Web ベースターミナル
-    - Claude によるリアルタイム AI アシスタント
-    - 脅威検知とコマンドフィルタリング
-    - セッション記録と再生
-    - iframe または JavaScript SDK で埋め込み可能
-    - WebSocket (Socket.IO) トランスポート
-    - カスタマイズ可能なテーマとキーバインド
+  <TabItem label="コア">
+    - フル PTY ターミナル（bash, zsh, fish — サーバーで動くものなら何でも）
+    - Socket.IO による WebSocket トランスポート
+    - モダンブラウザで動作
+    - レスポンシブ — コンテナサイズに適応
   </TabItem>
-  <TabItem label="エージェントシステム">
-    - マルチエージェントオーケストレーション (Claude Code SDK)
-    - 標準エージェントロール: Developer, Reviewer, Tester, Architect
-    - YAML によるカスタムエージェント定義
-    - 進捗ストリーミング付き非同期タスク実行
-    - エージェント間デリゲーション
-    - 会話履歴とコンテキスト管理
+  <TabItem label="AI アシスタント">
+    - Claude 搭載のコンテキスト対応 AI
+    - 会話に基づくコマンド提案
+    - エラーのインライン解説
+    - システムプロンプトとガードレールの設定可能
   </TabItem>
-  <TabItem label="MCP サーバー">
-    - プロセス管理 (Circus, Supervisord)
-    - セマンティックコード検索 (GrepAI + Qdrant)
-    - ドキュメントアクセス (Context7)
-    - カスタム MCP サーバー SDK
-    - stdio / SSE トランスポート
+  <TabItem label="セキュリティ">
+    - コマンドのリアルタイム脅威検知
+    - コマンド許可/拒否リストの設定
+    - フルリプレイ対応のセッション記録
+    - 監査ログのエクスポート（JSON, CSV）
   </TabItem>
-  <TabItem label="RAG パイプライン">
-    - コードベースの自動インデックス
-    - ファイル監視による増分更新
-    - OpenVINO アクセラレーテッド埋め込み
-    - Qdrant ベクトルストレージ
-    - テナント分離コレクション
-    - コールグラフトレーシング
+  <TabItem label="埋め込み">
+    - iframe 埋め込み（設定不要）
+    - JavaScript SDK（ライフサイクル完全制御）
+    - カスタムテーマ（ダーク、ライト、カスタム CSS）
+    - キーバインド設定
+    - イベントフック: `onCommand`, `onThreat`, `onConnect`, `onDisconnect`
   </TabItem>
 </Tabs>
 
-## プラットフォーム機能
+## RAG コード検索
 
-<CardGrid>
-  <Card title="マルチテナント" icon="random">
-    専用ベクトルストア、名前空間リソース、テナントごとの設定による完全なテナント分離。
-  </Card>
-  <Card title="可観測性" icon="magnifier">
-    全コンポーネントにわたる構造化ログ、OpenTelemetry トレース、Prometheus メトリクス。
-  </Card>
-  <Card title="セキュリティ" icon="approve-check">
-    ゼロトラストアーキテクチャ、プロキシベース認証、監査ログ、Vault によるシークレット管理。
-  </Card>
-  <Card title="Kubernetes ネイティブ" icon="setting">
-    全コンポーネント向けの Helm チャート、Skaffold 開発ループ、プロダクショングレードマニフェスト。
-  </Card>
-</CardGrid>
+<Tabs>
+  <TabItem label="インデックス">
+    - コードベースの自動インデックス
+    - ファイル監視による増分更新
+    - 20以上の言語をサポート（TypeScript, Python, Go, Rust, Java 等）
+    - 除外パターンの設定可能
+    - 最適な再現率のためのチャンクサイズ調整
+  </TabItem>
+  <TabItem label="検索">
+    - セマンティック検索 — テキストではなく、コードが何をしているかで検索
+    - 結果: ファイルパス、行番号、関連度スコア、コードスニペット
+    - 多言語クエリ対応（英語、日本語など）
+    - ファイルタイプ、ディレクトリ、プロジェクトでフィルタ
+  </TabItem>
+  <TabItem label="コールグラフ">
+    - 関数の全呼び出し元をトレース
+    - 関数の全呼び出し先をトレース
+    - 深さ設定可能（デフォルト: 3階層）
+    - ツール連携用 JSON 出力
+  </TabItem>
+  <TabItem label="インフラ">
+    - OpenVINO アクセラレーテッド埋め込み（bge-small-en-v1.5）
+    - Qdrant ベクトルストレージ（セルフホストまたはマネージド）
+    - カスタム連携用 REST API
+    - Docker Compose でワンコマンドセットアップ
+  </TabItem>
+</Tabs>
+
+## SDK オプション
+
+| 機能 | iframe | JS SDK |
+|---|---|---|
+| AI ターミナル | 対応 | 対応 |
+| RAG コード検索 | — | 対応 |
+| カスタムテーマ | 制限あり | フル |
+| イベントフック | — | 対応 |
+| プログラム制御 | — | 対応 |
+| 設定不要 | 対応 | — |
+
+## 対応環境
+
+- **ブラウザ:** Chrome, Firefox, Safari, Edge（最新2バージョン）
+- **サーバー:** Node.js 18+, Python 3.10+
+- **デプロイ:** Docker, Kubernetes（Helm チャート）, ベアメタル
+- **セルフホスト:** 外部依存なしで動作

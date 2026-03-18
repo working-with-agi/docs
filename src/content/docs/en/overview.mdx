@@ -1,46 +1,77 @@
 ---
-title: What is WorkWithAI?
-description: AI-native development components that accelerate your team's productivity
+title: What is WorkWithAGI?
+description: An SDK to embed AI terminals and semantic code search into your applications
 ---
 
-## Overview
+## The Problem
 
-WorkWithAI is a suite of production-ready components that bring AI-powered capabilities into your development workflow. Instead of building AI integrations from scratch, teams can leverage battle-tested building blocks to ship faster.
+You want to add AI-powered developer tools to your product — a terminal with AI assistance, or intelligent code search that understands intent. Building these from scratch takes months and requires expertise in PTY handling, vector databases, embedding models, and real-time WebSocket protocols.
 
-## Core Components
+## The Solution
+
+WorkWithAGI SDK gives you two production-ready capabilities as drop-in components:
 
 ### AI Terminal
-A web-based terminal with built-in AI assistance, threat detection, and session recording. Embeds directly into your application via iframe or SDK.
 
-### Agent Orchestration
-Multi-agent system powered by Claude SDK. Define agents for code review, testing, architecture analysis, and deployment — all working together.
+A web-based terminal that runs in any browser. Your users get:
 
-### MCP Integration Layer
-Model Context Protocol servers that connect AI agents to your existing tools: process managers, code search, documentation, and more.
+- Full PTY terminal (not a fake shell)
+- Built-in AI assistant that understands context
+- Command threat detection and filtering
+- Session recording and playback
+- Customizable themes and keybindings
 
-### Semantic Code Search
-GrepAI-powered code intelligence that understands intent, not just text. Find implementations by describing what they do.
+Embed it with an iframe or the JavaScript SDK:
 
-### RAG Pipeline
-Vector-backed retrieval augmented generation for your codebase. Automatic indexing, incremental updates, and tenant-isolated search.
+```html
+<!-- iframe: zero config -->
+<iframe src="https://terminal.workwithagi.dev/embed?key=YOUR_KEY"></iframe>
+```
+
+```typescript
+// SDK: full control
+import { WorkAGI } from "@working-with-agi/sdk";
+
+const term = WorkAGI.terminal("#container", {
+  theme: "dark",
+  ai: true,
+  recording: true,
+  onThreat: (alert) => notify(alert),
+});
+```
+
+### RAG Code Search
+
+Index any codebase and let users search by describing what code does — not by remembering exact names:
+
+```typescript
+const search = WorkAGI.codeSearch({
+  index: "my-project",
+  embedModel: "bge-small-en-v1.5",
+});
+
+// Index a directory
+await search.index("./src");
+
+// Search by intent
+const results = await search.query("error handling for API timeouts");
+// → file, line number, relevance score, code snippet
+```
+
+Features:
+- Automatic incremental indexing (file watcher)
+- OpenVINO-accelerated embeddings
+- Qdrant vector storage (self-hosted or managed)
+- Call graph tracing (find all callers/callees of a function)
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│           Your Application              │
-├─────────────┬───────────┬───────────────┤
-│ AI Terminal │  Agents   │  Code Search  │
-├─────────────┴───────────┴───────────────┤
-│         MCP Integration Layer           │
-├─────────────────────────────────────────┤
-│     RAG Pipeline  │  Vector Store       │
-└─────────────────────────────────────────┘
+Your App
+  │
+  ├── WorkAGI.terminal()  →  WebSocket (Socket.IO) → PTY + AI Agent
+  │
+  └── WorkAGI.search()    →  REST API → Embedding → Qdrant Vector DB
 ```
 
-## Who is it for?
-
-- **Development teams** wanting AI-assisted workflows without building from scratch
-- **Enterprise IT** needing secure, auditable AI integration
-- **Platform engineers** building internal developer platforms
-- **ISVs** embedding AI capabilities into their products
+Both components are self-hostable. No data leaves your infrastructure unless you choose our managed service.
