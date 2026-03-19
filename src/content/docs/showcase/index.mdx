@@ -1,54 +1,60 @@
 ---
 title: Showcase
-description: See WorkWithAI components in action
+description: WorkWithAGI SDK real-world examples and demos
 ---
 
-Explore real-world implementations of WorkWithAI components across different industries and use cases.
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+Explore real-world implementations and demos built with the WorkWithAGI SDK.
+
+<CardGrid>
+  <Card title="Secretary.IO" icon="laptop">
+    **AI Meeting Assistant** — An AI PMO platform that transforms meeting recordings into actionable knowledge. Powered by RAG pipeline, agent system, and MAGI deliberation mode.
+
+    [View details →](/showcase/secretary-io/)
+  </Card>
+  <Card title="MAGI System Demo" icon="star">
+    **Deliberation by Three Wise Agents** — Multi-agent decision-making demo inspired by the Evangelion MAGI system.
+
+    [View demo →](/showcase/magi-system/)
+  </Card>
+</CardGrid>
 
 ---
 
-## Secretary.IO — AI Meeting Assistant
+## More Examples
 
-**Industry:** Productivity / SaaS
-**Components used:** RAG Pipeline, Agent System, Semantic Search
-
-Secretary.IO uses WorkWithAI components to transform meeting recordings into actionable knowledge. A bot joins Google Meet sessions, captures audio in real-time, and feeds transcriptions into the RAG Pipeline for indexing. The Agent System then summarizes discussions, extracts action items, and identifies decisions — all searchable by intent through Semantic Search.
-
-> "We went from 'who said what in last Tuesday's meeting?' to instant, AI-powered answers across thousands of hours of meetings."
-
----
-
-## AI-Powered Code Review Platform
+### AI-Powered Code Review Platform
 
 **Industry:** Software Development
-**Components used:** Agent Orchestration, MCP Integration
+**Components:** Agent Orchestration, MCP Integration
 
-A development team integrated WorkWithAI's multi-agent system to automate code reviews. The Reviewer agent analyzes PRs for security vulnerabilities, performance issues, and code style — while the Architect agent checks for design pattern violations.
+A development team integrated WorkWithAGI's multi-agent system to automate code reviews. Reviewer agents analyze security vulnerabilities, performance issues, and code style, while Architect agents check for design pattern violations.
 
-> "Review turnaround dropped from 2 days to 20 minutes. The agents catch issues our manual reviews missed."
-
----
-
-## Enterprise Knowledge Search
-
-**Industry:** Telecom
-**Components used:** RAG Pipeline, Semantic Code Search
-
-A telecom provider deployed the RAG pipeline to index 500K+ internal documents and code repositories. Engineers search by intent ("how does the billing retry logic work?") instead of keywords.
-
-> "Our engineers spend 60% less time searching for answers. The semantic search understands what they actually need."
+> "Review turnaround dropped from 2 days to 20 minutes."
 
 ---
 
-## Secure Remote Development Environment
+### Enterprise Knowledge Search
+
+**Industry:** Telecommunications
+**Components:** RAG Pipeline, Semantic Code Search
+
+A telecom operator deployed the RAG pipeline to index 500,000+ internal documents and code repositories. Engineers search by intent, not keywords.
+
+> "60% reduction in engineer information retrieval time."
+
+---
+
+### Secure Remote Development Environment
 
 **Industry:** Financial Services
-**Components used:** AI Terminal, MCP Servers, Agent System
+**Components:** AI Terminal, MCP Server, Agent System
 
-A financial institution deployed WorkWithAI to provide secure, auditable development environments. Every terminal session is recorded, commands are filtered for compliance, and AI assistance operates within defined guardrails.
+A financial institution deployed WorkWithAGI for secure, auditable development environments. All terminal sessions are recorded, commands are compliance-filtered, and AI assistants operate within defined guardrails.
 
-> "We met our regulatory requirements while giving developers the AI tools they wanted."
+> "We gave developers the AI tools they want while meeting regulatory requirements."
 
 ---
 
-*Want to be featured? [Contact us](/contact/) with your story.*
+*Want to be featured? [Contact us](/contact/).*
