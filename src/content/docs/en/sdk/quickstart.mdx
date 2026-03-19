@@ -1,0 +1,158 @@
+---
+title: SDK Quick Start
+description: Get up and running with the WorkWithAGI SDK in minutes
+---
+
+import { Steps, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+This guide walks you through installing the SDK, creating a session, and rendering your first AI terminal.
+
+## Install
+
+<Tabs>
+  <TabItem label="Vue">
+  ```bash
+  npm install @working-with-agi/sdk @working-with-agi/vue
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```bash
+  npm install @working-with-agi/sdk @working-with-agi/react
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```bash
+  npm install @working-with-agi/sdk
+  ```
+  </TabItem>
+</Tabs>
+
+## Create a Session
+
+Every interaction starts with an `AgiApiClient`. The client authenticates with your API key and manages terminal sessions on the server.
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev", // or your self-hosted URL
+});
+
+// Create a new terminal session
+const session = await client.sessions.create({
+  name: "dev-session",
+  env: { NODE_ENV: "development" },
+});
+
+console.log("Session ID:", session.id);
+```
+
+<Aside type="tip">
+  Store your API key in an environment variable (`WORKWITHAGI_API_KEY`) rather than hard-coding it.
+</Aside>
+
+## Render the Terminal
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiTerminal } from "@working-with-agi/vue";
+
+  const apiKey = import.meta.env.VITE_AGI_KEY;
+  </script>
+
+  <template>
+    <AgiTerminal
+      :api-key="apiKey"
+      theme="dark"
+      ai
+      @command="(cmd) => console.log('Command:', cmd)"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { AgiTerminal } from "@working-with-agi/react";
+
+  export default function Terminal() {
+    return (
+      <AgiTerminal
+        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
+        theme="dark"
+        ai
+        onCommand={(cmd) => console.log("Command:", cmd)}
+      />
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  const terminal = WorkAGI.terminal("#terminal", {
+    apiKey: "your-api-key",
+    theme: "dark",
+    ai: true,
+    onCommand: (cmd) => console.log("Command:", cmd),
+  });
+
+  // Programmatic control
+  await terminal.execute("echo Hello from WorkWithAGI");
+  ```
+  </TabItem>
+</Tabs>
+
+## Full Example
+
+Below is a complete Vue single-file component that creates a client, opens a session, and renders a terminal:
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
+import { AgiApiClient } from "@working-with-agi/sdk";
+import { AgiTerminal } from "@working-with-agi/vue";
+
+const apiKey = import.meta.env.VITE_AGI_KEY;
+const sessionId = ref<string>();
+
+const client = new AgiApiClient({
+  apiKey,
+  endpoint: "https://api.workwithagi.dev",
+});
+
+onMounted(async () => {
+  const session = await client.sessions.create({ name: "quickstart" });
+  sessionId.value = session.id;
+});
+
+onUnmounted(async () => {
+  if (sessionId.value) {
+    await client.sessions.destroy(sessionId.value);
+  }
+});
+</script>
+
+<template>
+  <div style="height: 500px">
+    <AgiTerminal
+      v-if="sessionId"
+      :api-key="apiKey"
+      :session-id="sessionId"
+      theme="dark"
+      ai
+      recording
+    />
+    <p v-else>Starting session...</p>
+  </div>
+</template>
+```
+
+## Next Steps
+
+- [Pilot Mode](/en/sdk/pilot-mode/) — Floating terminal with background agent panes
+- [Knowledge Base](/en/sdk/knowledge/) — RAG-powered search and document ingestion
+- [Integration Guide](/en/integration/) — Advanced configuration and MCP setup

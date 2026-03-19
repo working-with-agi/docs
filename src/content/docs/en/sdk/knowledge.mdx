@@ -1,0 +1,230 @@
+---
+title: Knowledge Base (RAG)
+description: Upload documents, search with semantic RAG, and sync external sources
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+The Knowledge Base provides retrieval-augmented generation (RAG) for your AI terminals and agents. Upload documents, connect external sources, and let the AI search your knowledge in real time.
+
+## KnowledgeClient
+
+The `KnowledgeClient` manages document ingestion, semantic search, and context retrieval.
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev",
+});
+
+const knowledge = client.knowledge("my-project");
+```
+
+### Upload Documents
+
+```typescript
+// Upload a single file
+await knowledge.upload("./docs/architecture.md");
+
+// Upload multiple files
+await knowledge.upload([
+  "./docs/architecture.md",
+  "./docs/api-reference.md",
+  "./src/auth/README.md",
+]);
+
+// Upload with metadata
+await knowledge.upload("./docs/runbook.md", {
+  category: "operations",
+  tags: ["production", "incident-response"],
+});
+
+// Upload raw text
+await knowledge.ingest({
+  content: "The deployment process requires approval from two reviewers.",
+  source: "team-guidelines",
+  category: "process",
+});
+```
+
+### Search
+
+Semantic search returns relevant passages ranked by relevance:
+
+```typescript
+const results = await knowledge.search("how to handle authentication errors");
+
+for (const hit of results) {
+  console.log(`[${hit.score.toFixed(2)}] ${hit.source}:${hit.section}`);
+  console.log(hit.snippet);
+}
+// → [0.92] docs/auth.md:Error Handling
+//   When an authentication error occurs, the middleware returns a 401...
+```
+
+Search supports filters to narrow results:
+
+```typescript
+const results = await knowledge.search("deployment steps", {
+  category: "operations",
+  source: "runbook.md",
+  limit: 5,
+  minScore: 0.7,
+});
+```
+
+### Context for AI
+
+Retrieve formatted context suitable for passing to an AI model:
+
+```typescript
+const context = await knowledge.context("explain our caching strategy", {
+  maxTokens: 2000,
+  format: "markdown", // "markdown" | "plain" | "json"
+});
+
+// Pass to an agent or terminal session
+await client.agents.run(agentId, {
+  task: "Summarize our caching strategy",
+  context: context.text,
+});
+```
+
+## External Sync
+
+Connect external document sources for automatic synchronization. Documents are re-indexed on a configurable schedule.
+
+```typescript
+// Google Drive
+await knowledge.sync.connect({
+  provider: "google-drive",
+  credentials: { serviceAccountKey: "..." },
+  folderId: "1a2b3c4d5e",
+  schedule: "0 */6 * * *", // Every 6 hours
+});
+
+// SharePoint
+await knowledge.sync.connect({
+  provider: "sharepoint",
+  credentials: { tenantId: "...", clientId: "...", clientSecret: "..." },
+  siteUrl: "https://company.sharepoint.com/sites/engineering",
+  libraryName: "Documents",
+  schedule: "0 2 * * *", // Daily at 2 AM
+});
+
+// Notion
+await knowledge.sync.connect({
+  provider: "notion",
+  credentials: { integrationToken: "..." },
+  databaseIds: ["abc123", "def456"],
+  schedule: "0 */4 * * *", // Every 4 hours
+});
+
+// Confluence
+await knowledge.sync.connect({
+  provider: "confluence",
+  credentials: { apiToken: "...", email: "..." },
+  baseUrl: "https://company.atlassian.net",
+  spaceKeys: ["ENG", "OPS"],
+  schedule: "0 3 * * *",
+});
+```
+
+<Aside type="tip">
+  All credentials are encrypted at rest. For self-hosted deployments, credentials are stored in your own Vault instance.
+</Aside>
+
+### Managing Sync Connections
+
+```typescript
+// List active connections
+const connections = await knowledge.sync.list();
+
+// Trigger a manual sync
+await knowledge.sync.run("connection-id");
+
+// Check sync status
+const status = await knowledge.sync.status("connection-id");
+console.log(status.lastSync, status.documentCount, status.errors);
+
+// Disconnect a source
+await knowledge.sync.disconnect("connection-id");
+```
+
+## Supported File Formats
+
+| Category | Formats |
+|---|---|
+| **Code** | `.ts`, `.js`, `.py`, `.go`, `.rs`, `.java`, `.rb`, `.php`, `.c`, `.cpp`, `.cs`, `.swift`, `.kt` and 10+ more |
+| **Documents** | `.md`, `.mdx`, `.txt`, `.rst`, `.adoc` |
+| **Office** | `.pdf`, `.docx`, `.xlsx`, `.pptx` |
+| **Data** | `.json`, `.yaml`, `.yml`, `.toml`, `.csv` |
+| **Web** | `.html`, `.xml` |
+| **Config** | `.env`, `.ini`, `.conf`, `Dockerfile`, `Makefile`, `docker-compose.yml` |
+
+<Aside type="note">
+  Binary files (images, videos, compiled binaries) are skipped automatically. Office files are converted to text before indexing.
+</Aside>
+
+## Using with Components
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { useKnowledgeHub } from "@working-with-agi/vue";
+
+  const { search, results, loading } = useKnowledgeHub({
+    apiKey: import.meta.env.VITE_AGI_KEY,
+    index: "my-project",
+  });
+  </script>
+
+  <template>
+    <input
+      @input="search($event.target.value)"
+      placeholder="Search knowledge..."
+      :disabled="loading"
+    />
+    <div v-for="hit in results" :key="hit.source + hit.section">
+      <strong>{{ hit.source }}</strong> &mdash; {{ hit.snippet }}
+    </div>
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { useKnowledgeHub } from "@working-with-agi/react";
+
+  export default function Search() {
+    const { search, results, loading } = useKnowledgeHub({
+      apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
+      index: "my-project",
+    });
+
+    return (
+      <div>
+        <input
+          onChange={(e) => search(e.target.value)}
+          placeholder="Search knowledge..."
+          disabled={loading}
+        />
+        {results.map((hit) => (
+          <div key={hit.source + hit.section}>
+            <strong>{hit.source}</strong> &mdash; {hit.snippet}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  ```
+  </TabItem>
+</Tabs>
+
+## Next Steps
+
+- [SDK Quick Start](/en/sdk/quickstart/) — Install and render your first terminal
+- [Pilot Mode](/en/sdk/pilot-mode/) — Floating terminal with agent panes
+- [Integration Guide](/en/integration/) — MCP setup and advanced configuration

@@ -1,0 +1,196 @@
+---
+title: Pilot Mode
+description: Floating AI terminal with background agent panes
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+Pilot Mode provides a floating main terminal with collapsible background agent panes. It is designed for workflows where a human operator drives the primary terminal while AI agents work in parallel.
+
+## Overview
+
+The `AgiPilot` component renders:
+
+- **Main terminal** — a draggable, resizable floating panel for interactive use
+- **Agent panes** — background terminals that run autonomous tasks and report results
+
+All panes share the same session context, so agents can read files the operator creates and vice versa.
+
+## Basic Usage
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiPilot } from "@working-with-agi/vue";
+
+  const apiKey = import.meta.env.VITE_AGI_KEY;
+  </script>
+
+  <template>
+    <AgiPilot
+      :api-key="apiKey"
+      theme="dark"
+      :agents="[
+        { role: 'reviewer', label: 'Code Review' },
+        { role: 'tester', label: 'Test Runner' },
+      ]"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { AgiPilot } from "@working-with-agi/react";
+
+  export default function Workspace() {
+    return (
+      <AgiPilot
+        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
+        theme="dark"
+        agents={[
+          { role: "reviewer", label: "Code Review" },
+          { role: "tester", label: "Test Runner" },
+        ]}
+      />
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  const pilot = WorkAGI.pilot("#workspace", {
+    apiKey: "your-api-key",
+    theme: "dark",
+    agents: [
+      { role: "reviewer", label: "Code Review" },
+      { role: "tester", label: "Test Runner" },
+    ],
+  });
+  ```
+  </TabItem>
+</Tabs>
+
+## Adding Agents via API
+
+You can dynamically add or remove agent panes at runtime through the `AgiApiClient`:
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev",
+});
+
+// Add an agent to an existing Pilot session
+const agent = await client.agents.create({
+  sessionId: "pilot-session-id",
+  role: "architect",
+  label: "Architecture Advisor",
+  model: "claude-sonnet-4-6",
+  tools: ["read_file", "search_code", "write_file"],
+  systemPrompt: "You are a software architect. Suggest improvements.",
+});
+
+console.log("Agent ID:", agent.id);
+
+// Send a task to the agent
+await client.agents.run(agent.id, {
+  task: "Review the authentication module and suggest refactoring opportunities",
+  target: "src/auth/",
+});
+
+// Remove the agent when done
+await client.agents.destroy(agent.id);
+```
+
+<Aside type="note">
+  Each agent pane consumes one concurrent session slot. Check your plan's limits on the [Pricing](/en/pricing/) page.
+</Aside>
+
+## Agent Roles
+
+Built-in roles provide sensible defaults for common workflows:
+
+| Role | Default Tools | Description |
+|---|---|---|
+| `reviewer` | `read_file`, `search_code` | Reviews code and reports findings |
+| `tester` | `read_file`, `run_tests`, `write_file` | Runs tests and writes new test cases |
+| `architect` | `read_file`, `search_code` | Analyzes structure and suggests improvements |
+| `developer` | `read_file`, `write_file`, `run_command` | Implements changes based on instructions |
+
+You can override the default tools and system prompt for any role.
+
+## Theme Customization
+
+Pilot Mode supports the same themes as `AgiTerminal`, plus layout-specific options:
+
+```typescript
+const themeConfig = {
+  // Base terminal theme
+  theme: "dark", // "dark" | "light" | "system"
+
+  // Custom color overrides
+  colors: {
+    background: "#1a1b26",
+    foreground: "#a9b1d6",
+    cursor: "#c0caf5",
+    selection: "#33467c",
+    accent: "#7aa2f7",
+  },
+
+  // Pilot layout options
+  pilot: {
+    mainPosition: "bottom-right",  // "bottom-right" | "bottom-left" | "top-right" | "top-left"
+    mainWidth: 800,
+    mainHeight: 400,
+    agentPaneHeight: 200,
+    collapsedByDefault: true,      // Start agent panes collapsed
+    showStatusBar: true,           // Show agent status indicators
+  },
+};
+```
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <template>
+    <AgiPilot
+      :api-key="apiKey"
+      :theme-config="themeConfig"
+      :agents="agents"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  <AgiPilot
+    apiKey={apiKey}
+    themeConfig={themeConfig}
+    agents={agents}
+  />
+  ```
+  </TabItem>
+</Tabs>
+
+## Events
+
+Pilot Mode emits events for both the main terminal and agent panes:
+
+| Event | Payload | Description |
+|---|---|---|
+| `command` | `{ pane: string, command: string }` | A command was executed |
+| `agent:start` | `{ agentId: string, task: string }` | An agent started a task |
+| `agent:complete` | `{ agentId: string, result: object }` | An agent finished a task |
+| `agent:error` | `{ agentId: string, error: string }` | An agent encountered an error |
+| `pane:resize` | `{ pane: string, width: number, height: number }` | A pane was resized |
+
+## Next Steps
+
+- [SDK Quick Start](/en/sdk/quickstart/) — Basic setup and installation
+- [Knowledge Base](/en/sdk/knowledge/) — Connect your documents and code for RAG
+- [Features](/en/features/) — Full feature reference

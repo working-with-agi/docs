@@ -106,6 +106,27 @@ export default defineConfig({
           ],
         },
         {
+          label: "SDK",
+          translations: { ja: "SDK" },
+          items: [
+            {
+              label: "Quick Start",
+              translations: { ja: "クイックスタート" },
+              link: "/sdk/quickstart/",
+            },
+            {
+              label: "Pilot Mode",
+              translations: { ja: "パイロットモード" },
+              link: "/sdk/pilot-mode/",
+            },
+            {
+              label: "Knowledge Base",
+              translations: { ja: "ナレッジベース" },
+              link: "/sdk/knowledge/",
+            },
+          ],
+        },
+        {
           label: "Pricing",
           translations: { ja: "料金プラン" },
           items: [

@@ -1,0 +1,230 @@
+---
+title: ナレッジベース (RAG)
+description: ドキュメントのアップロード、セマンティック RAG 検索、外部ソースの同期
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+ナレッジベースは、AI ターミナルとエージェントのための検索拡張生成（RAG）を提供します。ドキュメントをアップロードし、外部ソースを接続することで、AI がリアルタイムにナレッジを検索できるようになります。
+
+## KnowledgeClient
+
+`KnowledgeClient` は、ドキュメントの取り込み、セマンティック検索、コンテキスト取得を管理します。
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev",
+});
+
+const knowledge = client.knowledge("my-project");
+```
+
+### ドキュメントのアップロード
+
+```typescript
+// 単一ファイルのアップロード
+await knowledge.upload("./docs/architecture.md");
+
+// 複数ファイルのアップロード
+await knowledge.upload([
+  "./docs/architecture.md",
+  "./docs/api-reference.md",
+  "./src/auth/README.md",
+]);
+
+// メタデータ付きアップロード
+await knowledge.upload("./docs/runbook.md", {
+  category: "operations",
+  tags: ["production", "incident-response"],
+});
+
+// テキストの直接取り込み
+await knowledge.ingest({
+  content: "デプロイプロセスには 2 名のレビュアーの承認が必要です。",
+  source: "team-guidelines",
+  category: "process",
+});
+```
+
+### 検索
+
+セマンティック検索は、関連性スコアでランク付けされた関連パッセージを返します。
+
+```typescript
+const results = await knowledge.search("認証エラーの処理方法");
+
+for (const hit of results) {
+  console.log(`[${hit.score.toFixed(2)}] ${hit.source}:${hit.section}`);
+  console.log(hit.snippet);
+}
+// → [0.92] docs/auth.md:エラーハンドリング
+//   認証エラーが発生した場合、ミドルウェアは 401 を返します...
+```
+
+フィルターで結果を絞り込めます。
+
+```typescript
+const results = await knowledge.search("デプロイ手順", {
+  category: "operations",
+  source: "runbook.md",
+  limit: 5,
+  minScore: 0.7,
+});
+```
+
+### AI 向けコンテキスト
+
+AI モデルに渡すためにフォーマットされたコンテキストを取得します。
+
+```typescript
+const context = await knowledge.context("キャッシュ戦略を説明して", {
+  maxTokens: 2000,
+  format: "markdown", // "markdown" | "plain" | "json"
+});
+
+// エージェントまたはターミナルセッションに渡す
+await client.agents.run(agentId, {
+  task: "キャッシュ戦略を要約してください",
+  context: context.text,
+});
+```
+
+## 外部ソースの同期
+
+外部ドキュメントソースを接続して自動同期を設定します。ドキュメントは設定可能なスケジュールで再インデックスされます。
+
+```typescript
+// Google Drive
+await knowledge.sync.connect({
+  provider: "google-drive",
+  credentials: { serviceAccountKey: "..." },
+  folderId: "1a2b3c4d5e",
+  schedule: "0 */6 * * *", // 6 時間ごと
+});
+
+// SharePoint
+await knowledge.sync.connect({
+  provider: "sharepoint",
+  credentials: { tenantId: "...", clientId: "...", clientSecret: "..." },
+  siteUrl: "https://company.sharepoint.com/sites/engineering",
+  libraryName: "Documents",
+  schedule: "0 2 * * *", // 毎日午前 2 時
+});
+
+// Notion
+await knowledge.sync.connect({
+  provider: "notion",
+  credentials: { integrationToken: "..." },
+  databaseIds: ["abc123", "def456"],
+  schedule: "0 */4 * * *", // 4 時間ごと
+});
+
+// Confluence
+await knowledge.sync.connect({
+  provider: "confluence",
+  credentials: { apiToken: "...", email: "..." },
+  baseUrl: "https://company.atlassian.net",
+  spaceKeys: ["ENG", "OPS"],
+  schedule: "0 3 * * *",
+});
+```
+
+<Aside type="tip">
+  すべての認証情報は保存時に暗号化されます。セルフホスト環境では、認証情報は自前の Vault インスタンスに保存されます。
+</Aside>
+
+### 同期接続の管理
+
+```typescript
+// アクティブな接続を一覧表示
+const connections = await knowledge.sync.list();
+
+// 手動同期をトリガー
+await knowledge.sync.run("connection-id");
+
+// 同期ステータスを確認
+const status = await knowledge.sync.status("connection-id");
+console.log(status.lastSync, status.documentCount, status.errors);
+
+// ソースを切断
+await knowledge.sync.disconnect("connection-id");
+```
+
+## サポートされるファイル形式
+
+| カテゴリ | 形式 |
+|---|---|
+| **コード** | `.ts`, `.js`, `.py`, `.go`, `.rs`, `.java`, `.rb`, `.php`, `.c`, `.cpp`, `.cs`, `.swift`, `.kt` ほか 10 種以上 |
+| **ドキュメント** | `.md`, `.mdx`, `.txt`, `.rst`, `.adoc` |
+| **オフィス** | `.pdf`, `.docx`, `.xlsx`, `.pptx` |
+| **データ** | `.json`, `.yaml`, `.yml`, `.toml`, `.csv` |
+| **ウェブ** | `.html`, `.xml` |
+| **設定** | `.env`, `.ini`, `.conf`, `Dockerfile`, `Makefile`, `docker-compose.yml` |
+
+<Aside type="note">
+  バイナリファイル（画像、動画、コンパイル済みバイナリ）は自動的にスキップされます。オフィスファイルはインデックス前にテキストに変換されます。
+</Aside>
+
+## コンポーネントでの利用
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { useKnowledgeHub } from "@working-with-agi/vue";
+
+  const { search, results, loading } = useKnowledgeHub({
+    apiKey: import.meta.env.VITE_AGI_KEY,
+    index: "my-project",
+  });
+  </script>
+
+  <template>
+    <input
+      @input="search($event.target.value)"
+      placeholder="ナレッジを検索..."
+      :disabled="loading"
+    />
+    <div v-for="hit in results" :key="hit.source + hit.section">
+      <strong>{{ hit.source }}</strong> &mdash; {{ hit.snippet }}
+    </div>
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { useKnowledgeHub } from "@working-with-agi/react";
+
+  export default function Search() {
+    const { search, results, loading } = useKnowledgeHub({
+      apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
+      index: "my-project",
+    });
+
+    return (
+      <div>
+        <input
+          onChange={(e) => search(e.target.value)}
+          placeholder="ナレッジを検索..."
+          disabled={loading}
+        />
+        {results.map((hit) => (
+          <div key={hit.source + hit.section}>
+            <strong>{hit.source}</strong> &mdash; {hit.snippet}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  ```
+  </TabItem>
+</Tabs>
+
+## 次のステップ
+
+- [SDK クイックスタート](/ja/sdk/quickstart/) — インストールと最初のターミナル表示
+- [パイロットモード](/ja/sdk/pilot-mode/) — フローティングターミナルとエージェントペイン
+- [インテグレーションガイド](/ja/integration/) — MCP セットアップと詳細設定

@@ -1,0 +1,196 @@
+---
+title: パイロットモード
+description: フローティング AI ターミナルとバックグラウンドエージェントペイン
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+パイロットモードは、フローティングメインターミナルと折りたたみ可能なバックグラウンドエージェントペインを提供します。人間のオペレータがメインターミナルを操作しながら、AI エージェントが並行して作業するワークフロー向けに設計されています。
+
+## 概要
+
+`AgiPilot` コンポーネントは以下をレンダリングします:
+
+- **メインターミナル** — ドラッグ・リサイズ可能なフローティングパネル（インタラクティブ操作用）
+- **エージェントペイン** — 自律タスクを実行し、結果を報告するバックグラウンドターミナル
+
+すべてのペインは同じセッションコンテキストを共有するため、エージェントはオペレータが作成したファイルを読み取ることができ、その逆も可能です。
+
+## 基本的な使い方
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiPilot } from "@working-with-agi/vue";
+
+  const apiKey = import.meta.env.VITE_AGI_KEY;
+  </script>
+
+  <template>
+    <AgiPilot
+      :api-key="apiKey"
+      theme="dark"
+      :agents="[
+        { role: 'reviewer', label: 'コードレビュー' },
+        { role: 'tester', label: 'テスト実行' },
+      ]"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { AgiPilot } from "@working-with-agi/react";
+
+  export default function Workspace() {
+    return (
+      <AgiPilot
+        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
+        theme="dark"
+        agents={[
+          { role: "reviewer", label: "コードレビュー" },
+          { role: "tester", label: "テスト実行" },
+        ]}
+      />
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  const pilot = WorkAGI.pilot("#workspace", {
+    apiKey: "your-api-key",
+    theme: "dark",
+    agents: [
+      { role: "reviewer", label: "コードレビュー" },
+      { role: "tester", label: "テスト実行" },
+    ],
+  });
+  ```
+  </TabItem>
+</Tabs>
+
+## API によるエージェントの追加
+
+`AgiApiClient` を使って、実行時にエージェントペインを動的に追加・削除できます。
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev",
+});
+
+// 既存の Pilot セッションにエージェントを追加
+const agent = await client.agents.create({
+  sessionId: "pilot-session-id",
+  role: "architect",
+  label: "アーキテクチャアドバイザー",
+  model: "claude-sonnet-4-6",
+  tools: ["read_file", "search_code", "write_file"],
+  systemPrompt: "あなたはソフトウェアアーキテクトです。改善点を提案してください。",
+});
+
+console.log("Agent ID:", agent.id);
+
+// エージェントにタスクを送信
+await client.agents.run(agent.id, {
+  task: "認証モジュールをレビューし、リファクタリングの機会を提案してください",
+  target: "src/auth/",
+});
+
+// 完了後にエージェントを削除
+await client.agents.destroy(agent.id);
+```
+
+<Aside type="note">
+  各エージェントペインは同時セッション枠を 1 つ消費します。プランの上限は[料金プラン](/ja/pricing/)ページでご確認ください。
+</Aside>
+
+## エージェントロール
+
+ビルトインロールは、一般的なワークフロー向けに適切なデフォルト設定を提供します。
+
+| ロール | デフォルトツール | 説明 |
+|---|---|---|
+| `reviewer` | `read_file`, `search_code` | コードをレビューし、結果を報告 |
+| `tester` | `read_file`, `run_tests`, `write_file` | テストを実行し、新しいテストケースを作成 |
+| `architect` | `read_file`, `search_code` | 構造を分析し、改善を提案 |
+| `developer` | `read_file`, `write_file`, `run_command` | 指示に基づいて変更を実装 |
+
+どのロールでもデフォルトのツールとシステムプロンプトをオーバーライドできます。
+
+## テーマのカスタマイズ
+
+パイロットモードは `AgiTerminal` と同じテーマに加え、レイアウト固有のオプションをサポートしています。
+
+```typescript
+const themeConfig = {
+  // ベースターミナルテーマ
+  theme: "dark", // "dark" | "light" | "system"
+
+  // カスタムカラー
+  colors: {
+    background: "#1a1b26",
+    foreground: "#a9b1d6",
+    cursor: "#c0caf5",
+    selection: "#33467c",
+    accent: "#7aa2f7",
+  },
+
+  // Pilot レイアウトオプション
+  pilot: {
+    mainPosition: "bottom-right",  // "bottom-right" | "bottom-left" | "top-right" | "top-left"
+    mainWidth: 800,
+    mainHeight: 400,
+    agentPaneHeight: 200,
+    collapsedByDefault: true,      // エージェントペインを折りたたんだ状態で開始
+    showStatusBar: true,           // エージェントステータスインジケーターを表示
+  },
+};
+```
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <template>
+    <AgiPilot
+      :api-key="apiKey"
+      :theme-config="themeConfig"
+      :agents="agents"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  <AgiPilot
+    apiKey={apiKey}
+    themeConfig={themeConfig}
+    agents={agents}
+  />
+  ```
+  </TabItem>
+</Tabs>
+
+## イベント
+
+パイロットモードは、メインターミナルとエージェントペインの両方からイベントを発行します。
+
+| イベント | ペイロード | 説明 |
+|---|---|---|
+| `command` | `{ pane: string, command: string }` | コマンドが実行された |
+| `agent:start` | `{ agentId: string, task: string }` | エージェントがタスクを開始した |
+| `agent:complete` | `{ agentId: string, result: object }` | エージェントがタスクを完了した |
+| `agent:error` | `{ agentId: string, error: string }` | エージェントがエラーに遭遇した |
+| `pane:resize` | `{ pane: string, width: number, height: number }` | ペインがリサイズされた |
+
+## 次のステップ
+
+- [SDK クイックスタート](/ja/sdk/quickstart/) — 基本的なセットアップとインストール
+- [ナレッジベース](/ja/sdk/knowledge/) — RAG のためのドキュメント・コード連携
+- [機能一覧](/ja/features/) — 全機能リファレンス

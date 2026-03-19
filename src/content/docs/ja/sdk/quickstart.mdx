@@ -1,0 +1,158 @@
+---
+title: SDK クイックスタート
+description: WorkWithAGI SDK を数分でセットアップする
+---
+
+import { Steps, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+このガイドでは、SDK のインストール、セッションの作成、AI ターミナルの表示までを解説します。
+
+## インストール
+
+<Tabs>
+  <TabItem label="Vue">
+  ```bash
+  npm install @working-with-agi/sdk @working-with-agi/vue
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```bash
+  npm install @working-with-agi/sdk @working-with-agi/react
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```bash
+  npm install @working-with-agi/sdk
+  ```
+  </TabItem>
+</Tabs>
+
+## セッションの作成
+
+すべてのインタラクションは `AgiApiClient` から始まります。クライアントは API キーで認証し、サーバー上のターミナルセッションを管理します。
+
+```typescript
+import { AgiApiClient } from "@working-with-agi/sdk";
+
+const client = new AgiApiClient({
+  apiKey: "your-api-key",
+  endpoint: "https://api.workwithagi.dev", // またはセルフホスト URL
+});
+
+// 新しいターミナルセッションを作成
+const session = await client.sessions.create({
+  name: "dev-session",
+  env: { NODE_ENV: "development" },
+});
+
+console.log("Session ID:", session.id);
+```
+
+<Aside type="tip">
+  API キーはハードコーディングせず、環境変数（`WORKWITHAGI_API_KEY`）に保存してください。
+</Aside>
+
+## ターミナルの表示
+
+<Tabs>
+  <TabItem label="Vue">
+  ```vue
+  <script setup>
+  import { AgiTerminal } from "@working-with-agi/vue";
+
+  const apiKey = import.meta.env.VITE_AGI_KEY;
+  </script>
+
+  <template>
+    <AgiTerminal
+      :api-key="apiKey"
+      theme="dark"
+      ai
+      @command="(cmd) => console.log('Command:', cmd)"
+    />
+  </template>
+  ```
+  </TabItem>
+  <TabItem label="React">
+  ```tsx
+  import { AgiTerminal } from "@working-with-agi/react";
+
+  export default function Terminal() {
+    return (
+      <AgiTerminal
+        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
+        theme="dark"
+        ai
+        onCommand={(cmd) => console.log("Command:", cmd)}
+      />
+    );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Vanilla JS">
+  ```typescript
+  import { WorkAGI } from "@working-with-agi/sdk";
+
+  const terminal = WorkAGI.terminal("#terminal", {
+    apiKey: "your-api-key",
+    theme: "dark",
+    ai: true,
+    onCommand: (cmd) => console.log("Command:", cmd),
+  });
+
+  // プログラムからの操作
+  await terminal.execute("echo Hello from WorkWithAGI");
+  ```
+  </TabItem>
+</Tabs>
+
+## 完全なサンプル
+
+以下は、クライアント作成からセッション開始、ターミナル表示までを含む Vue シングルファイルコンポーネントの全体例です。
+
+```vue
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from "vue";
+import { AgiApiClient } from "@working-with-agi/sdk";
+import { AgiTerminal } from "@working-with-agi/vue";
+
+const apiKey = import.meta.env.VITE_AGI_KEY;
+const sessionId = ref<string>();
+
+const client = new AgiApiClient({
+  apiKey,
+  endpoint: "https://api.workwithagi.dev",
+});
+
+onMounted(async () => {
+  const session = await client.sessions.create({ name: "quickstart" });
+  sessionId.value = session.id;
+});
+
+onUnmounted(async () => {
+  if (sessionId.value) {
+    await client.sessions.destroy(sessionId.value);
+  }
+});
+</script>
+
+<template>
+  <div style="height: 500px">
+    <AgiTerminal
+      v-if="sessionId"
+      :api-key="apiKey"
+      :session-id="sessionId"
+      theme="dark"
+      ai
+      recording
+    />
+    <p v-else>セッションを開始中...</p>
+  </div>
+</template>
+```
+
+## 次のステップ
+
+- [パイロットモード](/ja/sdk/pilot-mode/) — フローティングターミナルとバックグラウンドエージェントペイン
+- [ナレッジベース](/ja/sdk/knowledge/) — RAG によるドキュメント検索・取り込み
+- [インテグレーションガイド](/ja/integration/) — 詳細設定と MCP セットアップ
