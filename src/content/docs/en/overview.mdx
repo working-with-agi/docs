@@ -1,11 +1,11 @@
 ---
 title: What is WorkWithAGI?
-description: An SDK to embed AI terminals and semantic code search into your applications
+description: An SDK to embed AI terminals and KnowledgeHub into your applications
 ---
 
 ## The Problem
 
-You want to add AI-powered developer tools to your product — a terminal with AI assistance, or intelligent code search that understands intent. Building these from scratch takes months and requires expertise in PTY handling, vector databases, embedding models, and real-time WebSocket protocols.
+You want to add AI-powered developer tools to your product — a terminal with AI assistance, or an intelligent knowledge search that understands intent. Building these from scratch takes months and requires expertise in PTY handling, vector databases, embedding models, and real-time WebSocket protocols.
 
 ## The Solution
 
@@ -40,38 +40,37 @@ const term = WorkAGI.terminal("#container", {
 });
 ```
 
-### RAG Code Search
+### KnowledgeHub
 
-Index any codebase and let users search by describing what code does — not by remembering exact names:
+Index documents, code, and wikis — then let users search by describing what they need, not by remembering exact names:
 
 ```typescript
-const search = WorkAGI.codeSearch({
+const hub = WorkAGI.knowledgeHub({
   index: "my-project",
-  embedModel: "bge-small-en-v1.5",
 });
 
 // Index a directory
-await search.index("./src");
+await hub.ingest("./src");
 
 // Search by intent
-const results = await search.query("error handling for API timeouts");
-// → file, line number, relevance score, code snippet
+const results = await hub.search("error handling for API timeouts");
+// → source, section, relevance score, snippet
 ```
 
 Features:
+- Multi-source ingestion (code, docs, wikis)
 - Automatic incremental indexing (file watcher)
-- OpenVINO-accelerated embeddings
-- Qdrant vector storage (self-hosted or managed)
-- Call graph tracing (find all callers/callees of a function)
+- Semantic search across your entire knowledge base
+- Context-aware retrieval with source attribution
 
 ## Architecture
 
 ```
 Your App
   │
-  ├── WorkAGI.terminal()  →  WebSocket (Socket.IO) → PTY + AI Agent
+  ├── WorkAGI.terminal()       →  WebSocket (Socket.IO) → PTY + AI Agent
   │
-  └── WorkAGI.search()    →  REST API → Embedding → Qdrant Vector DB
+  └── WorkAGI.knowledgeHub()   →  REST API → Embedding → Vector DB
 ```
 
 Both components are self-hostable. No data leaves your infrastructure unless you choose our managed service.

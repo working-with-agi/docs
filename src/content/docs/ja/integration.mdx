@@ -65,7 +65,7 @@ console.log(result.findings);
 ```yaml
 # workai-mcp.yaml
 servers:
-  code-search:
+  knowledge-hub:
     transport: sse
     url: http://localhost:8808
   process-manager:
@@ -73,17 +73,15 @@ servers:
     command: workai-mcp-circus
 ```
 
-## RAG パイプラインの設定
+## KnowledgeHub の設定
 
 ```typescript
-const rag = workai.rag.configure({
-  vectorStore: "qdrant",
-  embeddingModel: "bge-small-en-v1.5",
+const hub = workai.knowledgeHub.configure({
   chunkSize: 512,
   watchPaths: ["src/", "docs/"],
   excludePatterns: ["node_modules/", "*.min.js"],
 });
 
-await rag.index();
-const results = await rag.search("エラーハンドリングパターン");
+await hub.ingest();
+const results = await hub.search("エラーハンドリングパターン");
 ```

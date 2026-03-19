@@ -1,0 +1,146 @@
+---
+title: アーキテクチャ
+description: WorkWithAGI のシステムアーキテクチャとコンポーネント概要
+---
+
+## システム概要
+
+WorkWithAGI は **AI Terminal** と **KnowledgeHub** の2つのコアサブシステムで構成されています。それぞれ独立してデプロイ可能で、統一された SDK からアクセスできます。
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  あなたのアプリケーション               │
+│                                                     │
+│   WorkAGI.terminal()         WorkAGI.knowledgeHub() │
+│        │                            │               │
+└────────┼────────────────────────────┼───────────────┘
+         │                            │
+    WebSocket (wss://)           REST API (HTTPS)
+         │                            │
+┌────────▼──────────┐   ┌────────────▼──────────────┐
+│  agiterm-server   │   │    KnowledgeHub Server    │
+│                   │   │                           │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │ PTY Manager │  │   │  │  Document Ingestion  │  │
+│  └─────────────┘  │   │  └─────────────────────┘  │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │  AI Agent   │  │   │  │  Embedding Engine    │  │
+│  └─────────────┘  │   │  └─────────────────────┘  │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │  Session &  │  │   │  │  Semantic Search     │  │
+│  │   Pane Mgmt │  │   │  └─────────────────────┘  │
+│  └─────────────┘  │   │  ┌─────────────────────┐  │
+│  ┌─────────────┐  │   │  │  Vector Store        │  │
+│  │   Threat    │  │   │  │  (Qdrant)            │  │
+│  │  Detection  │  │   │  └─────────────────────┘  │
+│  └─────────────┘  │   └───────────────────────────┘
+└───────────────────┘
+```
+
+## AI Terminal
+
+ターミナルサブシステムは、AI アシスタント付きの本物の PTY（疑似端末）へのブラウザベースアクセスを提供します。
+
+### 接続フロー
+
+1. **セッション作成** — クライアントが REST API の `POST /api/v1/sessions` を呼び出し、PTY を確保して `session_id` を取得
+2. **WebSocket 接続** — `wss://server/ws/sdk/{session_id}` に接続してリアルタイム I/O を開始
+3. **バイナリフレーム** — PTY の入出力をバイナリ WebSocket フレームで送受信
+4. **テキストフレーム** — 制御メッセージ（リサイズ、ping/pong）を JSON テキストフレームで送信
+
+```
+ブラウザ (xterm.js)
+    │
+    ├── Binary frame →  PTY stdin
+    ├── Binary frame ←  PTY stdout
+    │
+    ├── Text: {"type": "resize", "cols": 120, "rows": 40}
+    └── Text: {"type": "ping"} / {"type": "pong"}
+```
+
+### 主要コンポーネント
+
+| コンポーネント | 役割 |
+|------------|------|
+| **PTY Manager** | 疑似端末プロセスの生成・管理 |
+| **Session Manager** | セッション、ペイン、レイアウトツリーの管理 |
+| **AI Agent** | ターミナル内でのコンテキストに応じた AI アシスタンス |
+| **Threat Detection** | 実行前のコマンドセキュリティリスク分析 |
+
+### REST API エンドポイント
+
+| メソッド | エンドポイント | 説明 |
+|---------|-------------|------|
+| `GET` | `/api/v1/tools` | 利用可能な AI CLI ツール一覧 |
+| `POST` | `/api/v1/sessions` | 新しいターミナルセッションを作成 |
+| `GET` | `/api/v1/sessions` | 全セッション一覧 |
+| `DELETE` | `/api/v1/sessions/:id` | セッションを破棄 |
+| `POST` | `/api/v1/sessions/:id/resize` | セッション PTY のリサイズ |
+| `POST` | `/api/v1/sessions/:id/panes` | ワークスペースにペインを追加 |
+| `DELETE` | `/api/v1/sessions/:id/panes/:paneId` | ペインを削除 |
+| `GET` | `/api/v1/sessions/:id/layout` | ワークスペースのレイアウトツリーを取得 |
+| `GET` | `/api/v1/health` | ヘルスチェック |
+
+## KnowledgeHub
+
+KnowledgeHub は、ドキュメントやコードを取り込み、セマンティックインデックスを構築し、組織のナレッジベース全体にわたるインテリジェント検索を提供するナレッジ管理サブシステムです。
+
+### パイプライン
+
+```
+ドキュメント / コード / Wiki
+    │
+    ▼
+┌──────────────┐     ┌──────────────────┐     ┌────────────┐
+│   Ingestion  │ ──▶ │ Embedding Engine  │ ──▶ │   Qdrant   │
+│              │     │                  │     │ Vector DB  │
+└──────────────┘     └──────────────────┘     └─────┬──────┘
+                                                    │
+ユーザクエリ ──▶ クエリ埋め込み ──▶ セマンティック検索 ──┘
+                                    │
+                                    ▼
+                          ランキング結果
+                   (source, section, score, snippet)
+```
+
+### 主な機能
+
+- **マルチソース取り込み** — コードリポジトリ、ドキュメント、Wiki、社内ナレッジベース
+- **セマンティック検索** — キーワードではなく意味で情報を検索
+- **差分インデックス** — ソース変更時の自動再インデックス
+- **コンテキスト対応検索** — ソース帰属付きの関連性ランキング結果
+
+## SDK レイヤー
+
+クライアント SDK は、共通コア上にフレームワーク別パッケージを構築したモノレポ構成です：
+
+```
+@working-with-agi/sdk  (core)
+    │
+    ├── @working-with-agi/react
+    ├── @working-with-agi/vue
+    └── @working-with-agi/angular
+```
+
+コアパッケージが提供する機能：
+
+- **`WorkAGI.api()`** — セッション管理用 REST クライアント
+- **`WorkAGI.connect()`** — ヘッドレス WebSocket ターミナル（UI なし）
+- **`WorkAGI.terminal()`** — xterm.js によるレンダリング付きターミナル
+- **`WorkAGI.knowledgeHub()`** — KnowledgeHub クライアント
+
+## デプロイ
+
+両サブシステムは完全にセルフホスト可能です。マネージドサービスを選択しない限り、データがインフラ外に出ることはありません。
+
+```bash
+# セルフホストデプロイ
+git clone https://github.com/working-with-agi/self-hosted.git
+cd self-hosted
+docker compose up -d
+```
+
+Docker Compose スタックの構成：
+- **agiterm-server** — ターミナルバックエンド
+- **KnowledgeHub** — 取り込み、埋め込み、検索パイプライン
+- **Qdrant** — ベクトルデータベース

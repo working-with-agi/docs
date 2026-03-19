@@ -114,25 +114,25 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   </TabItem>
 </Tabs>
 
-## RAG コード検索
+## KnowledgeHub
 
 <Tabs>
   <TabItem label="React">
   ```tsx
-  import { useCodeSearch } from "@working-with-agi/react";
+  import { useKnowledgeHub } from "@working-with-agi/react";
 
   export default function Search() {
-    const { search, results, loading } = useCodeSearch({
+    const { search, results, loading } = useKnowledgeHub({
       apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
       index: "my-project",
     });
 
     return (
       <div>
-        <input onChange={(e) => search(e.target.value)} placeholder="コードを検索..." />
+        <input onChange={(e) => search(e.target.value)} placeholder="ナレッジを検索..." />
         {results.map((hit) => (
-          <div key={hit.file + hit.line}>
-            <code>{hit.file}:{hit.line}</code> — {hit.snippet}
+          <div key={hit.source + hit.section}>
+            <code>{hit.source}:{hit.section}</code> — {hit.snippet}
           </div>
         ))}
       </div>
@@ -143,18 +143,18 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Vue">
   ```vue
   <script setup>
-  import { useCodeSearch } from "@working-with-agi/vue";
+  import { useKnowledgeHub } from "@working-with-agi/vue";
 
-  const { search, results, loading } = useCodeSearch({
+  const { search, results, loading } = useKnowledgeHub({
     apiKey: agiKey,
     index: "my-project",
   });
   </script>
 
   <template>
-    <input @input="search($event.target.value)" placeholder="コードを検索..." />
-    <div v-for="hit in results" :key="hit.file + hit.line">
-      <code>{{ hit.file }}:{{ hit.line }}</code> — {{ hit.snippet }}
+    <input @input="search($event.target.value)" placeholder="ナレッジを検索..." />
+    <div v-for="hit in results" :key="hit.source + hit.section">
+      <code>{{ hit.source }}:{{ hit.section }}</code> — {{ hit.snippet }}
     </div>
   </template>
   ```
@@ -162,22 +162,22 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Angular">
   ```typescript
   import { Component } from "@angular/core";
-  import { CodeSearchService } from "@working-with-agi/angular";
+  import { KnowledgeHubService } from "@working-with-agi/angular";
 
   @Component({
     template: `
-      <input (input)="onSearch($event)" placeholder="コードを検索..." />
+      <input (input)="onSearch($event)" placeholder="ナレッジを検索..." />
       <div *ngFor="let hit of results">
-        <code>{{ hit.file }}:{{ hit.line }}</code> — {{ hit.snippet }}
+        <code>{{ hit.source }}:{{ hit.section }}</code> — {{ hit.snippet }}
       </div>
     `,
   })
   export class SearchPage {
     results: any[] = [];
-    constructor(private codeSearch: CodeSearchService) {}
+    constructor(private knowledgeHub: KnowledgeHubService) {}
     async onSearch(event: Event) {
       const query = (event.target as HTMLInputElement).value;
-      this.results = await this.codeSearch.search(query);
+      this.results = await this.knowledgeHub.search(query);
     }
   }
   ```
@@ -186,13 +186,13 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   ```typescript
   import { WorkAGI } from "@working-with-agi/sdk";
 
-  const search = WorkAGI.codeSearch({
+  const hub = WorkAGI.knowledgeHub({
     apiKey: "your-api-key",
     index: "my-project",
   });
 
-  const results = await search.query("API タイムアウトのエラーハンドリング");
-  // → [{ file, line, score, snippet }]
+  const results = await hub.search("API タイムアウトのエラーハンドリング");
+  // → [{ source, section, score, snippet }]
   ```
   </TabItem>
 </Tabs>
@@ -206,11 +206,11 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 git clone https://github.com/working-with-agi/self-hosted.git
 cd self-hosted
 
-# 全サービス起動（ターミナルサーバー + RAG パイプライン + Qdrant）
+# 全サービス起動（ターミナルサーバー + KnowledgeHub）
 docker compose up -d
 
-# コードベースをインデックス
-docker compose exec indexer grepai index /path/to/your/code
+# ナレッジソースを取り込み
+docker compose exec knowledgehub ingest /path/to/your/content
 ```
 
 ## 次のステップ

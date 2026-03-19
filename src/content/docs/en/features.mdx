@@ -35,31 +35,31 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
   </TabItem>
 </Tabs>
 
-## RAG Code Search
+## KnowledgeHub
 
 <Tabs>
-  <TabItem label="Indexing">
-    - Automatic codebase indexing
+  <TabItem label="Ingestion">
+    - Multi-source ingestion (code, documents, wikis)
     - Incremental updates via file watcher
-    - Supports 20+ languages (TypeScript, Python, Go, Rust, Java, etc.)
+    - Supports 20+ programming languages and document formats
     - Configurable exclude patterns
     - Chunk size tuning for optimal recall
   </TabItem>
   <TabItem label="Search">
-    - Semantic search — describe what code does, not exact text
-    - Returns: file path, line number, relevance score, code snippet
+    - Semantic search — describe what you need, not exact text
+    - Returns: source, section, relevance score, snippet
     - Multi-language queries (English, Japanese, etc.)
-    - Filters by file type, directory, or project
+    - Filters by source type, directory, or project
   </TabItem>
-  <TabItem label="Call Graph">
-    - Trace all callers of a function
-    - Trace all callees of a function
+  <TabItem label="Knowledge Graph">
+    - Trace relationships across documents and code
+    - Cross-reference between sources
     - Configurable depth (default: 3 levels)
     - JSON output for tool integration
   </TabItem>
   <TabItem label="Infrastructure">
-    - OpenVINO-accelerated embeddings (bge-small-en-v1.5)
-    - Qdrant vector storage (self-hosted or managed)
+    - Vector-based semantic indexing
+    - Self-hosted or managed deployment
     - REST API for custom integrations
     - Docker Compose for one-command setup
   </TabItem>
@@ -70,7 +70,7 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 | Feature | iframe | JS SDK |
 |---|---|---|
 | AI Terminal | Yes | Yes |
-| RAG Code Search | — | Yes |
+| KnowledgeHub | — | Yes |
 | Custom themes | Limited | Full |
 | Event hooks | — | Yes |
 | Programmatic control | — | Yes |

@@ -1,0 +1,146 @@
+---
+title: Architecture
+description: System architecture and component overview of WorkWithAGI
+---
+
+## System Overview
+
+WorkWithAGI consists of two core subsystems — **AI Terminal** and **KnowledgeHub** — each independently deployable and accessible through a unified SDK.
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   Your Application                  │
+│                                                     │
+│   WorkAGI.terminal()         WorkAGI.knowledgeHub() │
+│        │                            │               │
+└────────┼────────────────────────────┼───────────────┘
+         │                            │
+    WebSocket (wss://)           REST API (HTTPS)
+         │                            │
+┌────────▼──────────┐   ┌────────────▼──────────────┐
+│  agiterm-server   │   │    KnowledgeHub Server    │
+│                   │   │                           │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │ PTY Manager │  │   │  │  Document Ingestion  │  │
+│  └─────────────┘  │   │  └─────────────────────┘  │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │  AI Agent   │  │   │  │  Embedding Engine    │  │
+│  └─────────────┘  │   │  └─────────────────────┘  │
+│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
+│  │  Session &  │  │   │  │  Semantic Search     │  │
+│  │   Pane Mgmt │  │   │  └─────────────────────┘  │
+│  └─────────────┘  │   │  ┌─────────────────────┐  │
+│  ┌─────────────┐  │   │  │  Vector Store        │  │
+│  │   Threat    │  │   │  │  (Qdrant)            │  │
+│  │  Detection  │  │   │  └─────────────────────┘  │
+│  └─────────────┘  │   └───────────────────────────┘
+└───────────────────┘
+```
+
+## AI Terminal
+
+The terminal subsystem provides browser-based access to a real PTY (pseudo-terminal) with AI assistance.
+
+### Connection Flow
+
+1. **Session creation** — Client calls `POST /api/v1/sessions` via the REST API to allocate a PTY and receive a `session_id`
+2. **WebSocket upgrade** — Client connects to `wss://server/ws/sdk/{session_id}` for real-time I/O
+3. **Binary frames** — Raw PTY input/output is transmitted as binary WebSocket frames
+4. **Text frames** — Control messages (resize, ping/pong) are sent as JSON text frames
+
+```
+Browser (xterm.js)
+    │
+    ├── Binary frame →  PTY stdin
+    ├── Binary frame ←  PTY stdout
+    │
+    ├── Text: {"type": "resize", "cols": 120, "rows": 40}
+    └── Text: {"type": "ping"} / {"type": "pong"}
+```
+
+### Key Components
+
+| Component | Role |
+|-----------|------|
+| **PTY Manager** | Spawns and manages pseudo-terminal processes |
+| **Session Manager** | Tracks sessions, panes, and layout trees |
+| **AI Agent** | Provides contextual AI assistance within the terminal |
+| **Threat Detection** | Analyzes commands for security risks before execution |
+
+### REST API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/tools` | List available AI CLI tools |
+| `POST` | `/api/v1/sessions` | Create a new terminal session |
+| `GET` | `/api/v1/sessions` | List all sessions |
+| `DELETE` | `/api/v1/sessions/:id` | Destroy a session |
+| `POST` | `/api/v1/sessions/:id/resize` | Resize session PTY |
+| `POST` | `/api/v1/sessions/:id/panes` | Add a pane to workspace |
+| `DELETE` | `/api/v1/sessions/:id/panes/:paneId` | Remove a pane |
+| `GET` | `/api/v1/sessions/:id/layout` | Get workspace layout tree |
+| `GET` | `/api/v1/health` | Health check |
+
+## KnowledgeHub
+
+KnowledgeHub is the knowledge management subsystem that ingests documents and code, builds semantic indexes, and provides intelligent search across your organization's knowledge base.
+
+### Pipeline
+
+```
+Documents / Code / Wiki
+    │
+    ▼
+┌──────────────┐     ┌──────────────────┐     ┌────────────┐
+│   Ingestion  │ ──▶ │ Embedding Engine  │ ──▶ │   Qdrant   │
+│              │     │                  │     │ Vector DB  │
+└──────────────┘     └──────────────────┘     └─────┬──────┘
+                                                    │
+User query ──▶ Embed query ──▶ Semantic search ─────┘
+                                    │
+                                    ▼
+                          Ranked results
+                   (source, section, score, snippet)
+```
+
+### Key Capabilities
+
+- **Multi-source ingestion** — Code repositories, documentation, wikis, and internal knowledge bases
+- **Semantic search** — Find information by meaning, not just keywords
+- **Incremental indexing** — Automatic re-indexing when sources change
+- **Context-aware retrieval** — Results ranked by relevance with source attribution
+
+## SDK Layers
+
+The client SDK is structured as a monorepo with framework-specific packages built on a shared core:
+
+```
+@working-with-agi/sdk  (core)
+    │
+    ├── @working-with-agi/react
+    ├── @working-with-agi/vue
+    └── @working-with-agi/angular
+```
+
+The core package provides:
+
+- **`WorkAGI.api()`** — REST client for session management
+- **`WorkAGI.connect()`** — Headless WebSocket terminal (no UI)
+- **`WorkAGI.terminal()`** — Rendered terminal with xterm.js
+- **`WorkAGI.knowledgeHub()`** — KnowledgeHub client
+
+## Deployment
+
+Both subsystems are fully self-hostable. No data leaves your infrastructure unless you opt into the managed service.
+
+```bash
+# Self-hosted deployment
+git clone https://github.com/working-with-agi/self-hosted.git
+cd self-hosted
+docker compose up -d
+```
+
+The Docker Compose stack includes:
+- **agiterm-server** — Terminal backend
+- **KnowledgeHub** — Ingestion, embedding, and search pipeline
+- **Qdrant** — Vector database
