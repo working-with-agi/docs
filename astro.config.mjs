@@ -53,7 +53,23 @@ export default defineConfig({
         {
           label: "Showcase",
           translations: { ja: "ショーケース" },
-          autogenerate: { directory: "showcase" },
+          items: [
+            {
+              label: "Overview",
+              translations: { ja: "一覧" },
+              link: "/showcase/",
+            },
+            {
+              label: "Secretary.IO",
+              translations: { ja: "Secretary.IO" },
+              link: "/showcase/secretary-io/",
+            },
+            {
+              label: "MAGI System Demo",
+              translations: { ja: "MAGI System デモ" },
+              link: "/showcase/magi-system/",
+            },
+          ],
         },
         {
           label: "Getting Started",
