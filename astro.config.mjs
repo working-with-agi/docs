@@ -10,9 +10,9 @@ export default defineConfig({
         replacesTitle: false,
       },
       customCss: ["./src/styles/site.css"],
-      defaultLocale: "root",
+      defaultLocale: "ja",
       locales: {
-        root: {
+        en: {
           label: "English",
           lang: "en",
         },
