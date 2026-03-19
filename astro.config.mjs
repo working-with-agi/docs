@@ -98,6 +98,11 @@ export default defineConfig({
               translations: { ja: "インテグレーション" },
               link: "/integration/",
             },
+            {
+              label: "Architecture",
+              translations: { ja: "アーキテクチャ" },
+              link: "/architecture/",
+            },
           ],
         },
         {
