@@ -1,0 +1,125 @@
+---
+title: Architecture
+description: Work with AI system architecture — a scalable AI workspace built on Aether Platform
+---
+
+## Overview
+
+Work with AI is built on **Aether Platform**. **AGI Terminal** runs on Kubernetes, scalably processing AI workloads from any service.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Your Application                        │
+│                                                         │
+│   @work-with-ai/vue      @work-with-ai/react            │
+│         │                       │                       │
+└─────────┼───────────────────────┼───────────────────────┘
+          │                       │
+     WebSocket (wss://)      WebSocket (wss://)
+          │                       │
+┌─────────▼───────────────────────▼───────────────────────┐
+│                  Aether Platform                         │
+│                                                         │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              AGI Terminal (agiterm)                 │  │
+│  │                                                    │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │  │
+│  │  │ Session  │  │   PTY    │  │   Skill Injector │  │  │
+│  │  │ Manager  │  │ Manager  │  │   + Credentials  │  │  │
+│  │  └──────────┘  └──────────┘  └──────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │            MAGI Engine (deliberation AI)      │  │  │
+│  │  │  Agent A ←── NATS ──→ Agent B ──→ Agent C    │  │  │
+│  │  │  (pros)               (cons)      (neutral)   │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌──────────────────┐  ┌──────────────────────────────┐  │
+│  │  Knowledge Hub   │  │      Skill Registry          │  │
+│  │  ┌────────────┐  │  │  ┌────────────────────────┐  │  │
+│  │  │ Ingestion  │  │  │  │ SKILL.md (per provider)│  │  │
+│  │  │ Embedding  │  │  │  │ CLAUDE.md (context)    │  │  │
+│  │  │ Qdrant     │  │  │  └────────────────────────┘  │  │
+│  │  └────────────┘  │  └──────────────────────────────┘  │
+│  └──────────────────┘                                    │
+│                                                         │
+│  ┌──────────────────────────────────────────────────────┐│
+│  │            Kubernetes Infrastructure                 ││
+│  │  Multi-tenant isolation · Auto-scaling · Resources   ││
+│  └──────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────┘
+```
+
+## Layers
+
+### Frontend Layer
+
+Embed `@work-with-ai/vue` or other framework components in your application. Users start working with AI through a software-like interface.
+
+- Vue / React / Angular support
+- WebSocket connection to AGI Terminal
+- xterm.js rendering (transparent to users)
+
+### AGI Terminal (agiterm)
+
+AI agent execution environment on Aether Platform. Each session spawns a sandboxed container for safe agent execution.
+
+**Session lifecycle:**
+
+1. **Provision** — Create sandbox container / workspace
+2. **Inject** — Write skills (SKILL.md), context (CLAUDE.md), and credentials (`.agiterm/credentials/`, 0600) into workspace
+3. **Start** — Launch AI CLI in the workspace
+
+```
+{workspace}/
+├── .claude/agents/skills/{provider}/
+│   └── SKILL.md
+├── .agiterm/credentials/
+│   ├── token     (0600)
+│   └── api_url   (0600)
+└── CLAUDE.md
+```
+
+### MAGI Engine
+
+Multiple AI agents collaborate from different perspectives within AGI Terminal. Real-time inter-agent communication via NATS messaging.
+
+- **Three perspectives**: Pros / Cons / Neutral
+- **Deliberation**: Conclusions verified from multiple angles
+- **NATS backbone**: Real-time agent communication
+
+### Knowledge Hub
+
+Knowledge management subsystem for documents and data.
+
+| Component | Role |
+|-----------|------|
+| **Ingestion** | Documents, code, wiki intake |
+| **Embedding Engine** | Text to vector conversion |
+| **Qdrant** | Vector database |
+| **Semantic Search** | Meaning-based retrieval |
+
+Knowledge Hub provides "what AI knows".
+
+### Skill Registry
+
+Register and manage skills that run on top of Knowledge Hub. Skills are defined as `SKILL.md` files, injected into the workspace at session creation.
+
+Skill Registry defines "what AI can do". AI follows SKILL.md instructions to operate your systems.
+
+### Kubernetes Infrastructure
+
+AGI Terminal scales on Kubernetes.
+
+- **Multi-tenant isolation** — Per-tenant resource limits and network isolation
+- **Auto-scaling** — AGI Terminal pods scale on demand
+- **NATS** — Internal only (not exposed to internet)
+
+## Services on Aether Platform
+
+Work with AI is embedded in various services.
+
+| Service | Description |
+|---------|-------------|
+| [**Secretary.IO**](https://secretary.io) | Meeting intelligence — AI-powered meeting analysis, action item extraction, and project management |
