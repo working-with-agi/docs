@@ -1,6 +1,6 @@
 ---
 title: プラン・料金
-description: WorkWithAI コンポーネントの料金プラン
+description: WorkWithAGI SDK の料金プラン — AIクレジットベース
 ---
 
 import { Card, CardGrid } from "@astrojs/starlight/components";
@@ -8,42 +8,72 @@ import { Card, CardGrid } from "@astrojs/starlight/components";
 ## プランを選択
 
 <CardGrid>
-  <Card title="Starter" icon="rocket">
-    **AI 開発を始める小規模チーム向け**
+  <Card title="Starter — ¥4,980/月" icon="rocket">
+    **小規模チームに最適**
 
-    - 最大 5 名の開発者
-    - AI ターミナル（基本機能）
+    - 最大 10 名の開発者
+    - AI ターミナル（全機能）
     - セマンティックコード検索
-    - コミュニティサポート
+    - AIクレジット: 2,000/月
+    - メールサポート
 
-    [営業に問い合わせ →](/ja/contact/)
+    [早期アクセスを申請 →](/ja/contact/)
   </Card>
-  <Card title="Professional" icon="star">
-    **フル AI 機能が必要な成長チーム向け**
+  <Card title="Business — ¥14,800/月 ⭐" icon="star">
+    **成長中のチーム向け（おすすめ）**
 
-    - 最大 50 名の開発者
+    - 開発者数無制限
     - 全コンポーネント含む
+    - AIクレジット: 10,000/月
     - エージェントオーケストレーション
-    - RAG パイプライン
     - MCP インテグレーション
+    - チーム管理
     - 優先サポート
 
-    [営業に問い合わせ →](/ja/contact/)
+    [早期アクセスを申請 →](/ja/contact/)
   </Card>
   <Card title="Enterprise" icon="approve-check">
     **高度なセキュリティとスケールが必要な組織向け**
 
-    - 開発者数無制限
-    - Professional の全機能
+    - Business の全機能
+    - AIクレジット: 無制限
     - マルチテナント分離
     - カスタムエージェント定義
     - SSO / SAML 連携
     - 専任サポートエンジニア
     - SLA 保証
 
-    [営業に問い合わせ →](/ja/contact/)
+    [お問い合わせ →](/ja/contact/)
   </Card>
 </CardGrid>
+
+## AIクレジットとは？
+
+AIクレジットはAI機能の利用量を表す単位です。各操作は以下のクレジットを消費します：
+
+| 操作 | 消費クレジット |
+|---|---|
+| AI対話（1回） | 約 7 クレジット |
+| レポート自動生成 | 約 20 クレジット |
+| アクションアイテム抽出 | 約 8 クレジット |
+| データ横断分析 | 約 18 クレジット |
+| アジェンダ生成 | 約 5 クレジット |
+
+:::tip[目安]
+Businessプラン（10,000クレジット/月）なら、月500回のAI対話 + 100回のレポート生成 + 200回のアクション抽出が可能です。
+:::
+
+## クレジット追加パック
+
+月の途中でクレジットが不足した場合、追加パックを購入できます。
+
+| パック | クレジット | 価格 |
+|---|---|---|
+| credits_1000 | 1,000 | ¥2,980 |
+| credits_5000 | 5,000 | ¥12,800 |
+| credits_20000 | 20,000 | ¥49,800 |
+
+追加クレジットは購入月内で有効です。翌月にはプラン枠がリセットされます。
 
 ## 全プラン共通
 
