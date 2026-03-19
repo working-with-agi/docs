@@ -32,6 +32,19 @@ export default defineConfig({
             content: "width=device-width, initial-scale=1",
           },
         },
+        {
+          tag: "script",
+          content: `
+            (function() {
+              var p = window.location.pathname;
+              if (p === '/' || p === '') {
+                var lang = (navigator.language || navigator.userLanguage || 'ja').toLowerCase();
+                var dest = lang.startsWith('ja') ? '/ja/' : '/en/';
+                window.location.replace(dest);
+              }
+            })();
+          `,
+        },
       ],
       sidebar: [
         {
