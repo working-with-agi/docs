@@ -1,0 +1,204 @@
+---
+title: MAGI System デモ
+description: 3人の賢者による合議AIエージェントシステム
+---
+
+import { Card, CardGrid, Aside } from "@astrojs/starlight/components";
+
+<Aside type="tip" title="このページについて">
+MAGI System のコンセプトデモです。エヴァンゲリオンファンの皆さま、お許しください。
+</Aside>
+
+## MAGI System — 3人の賢者による合議
+
+```
+┌─────────────────────────────────────────────────┐
+│              N E R V   M A G I                  │
+│         SUPER-COMPUTER   SYSTEM                 │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│   ┌─────────┐  ┌─────────┐  ┌─────────┐       │
+│   │MELCHIOR │  │BALTHASAR│  │ CASPER  │       │
+│   │   -1    │  │   -2    │  │   -3    │       │
+│   │         │  │         │  │         │       │
+│   │ 科学者  │  │  母親   │  │   女    │       │
+│   └────┬────┘  └────┬────┘  └────┬────┘       │
+│        │            │            │             │
+│        ▼            ▼            ▼             │
+│   ┌─────────────────────────────────────┐      │
+│   │       多 数 決 プ ロ ト コ ル        │      │
+│   │    APPROVE / REJECT / ABSTAIN       │      │
+│   └─────────────────────────────────────┘      │
+│                     │                           │
+│                     ▼                           │
+│              【 最 終 決 定 】                   │
+│                                                 │
+│   STATUS: OPERATIONAL                           │
+│   PATTERN: BLUE                                 │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## デモ: 「新規プロジェクトの技術選定」
+
+問い: **「次のプロジェクトで Rust を採用すべきか？」**
+
+<CardGrid>
+  <Card title="MELCHIOR-1 — 科学者" icon="seti:rust">
+    **判定: APPROVE**
+
+    **論拠:**
+    - メモリ安全性が保証され、本番障害が削減される
+    - パフォーマンスはC++同等、開発体験は現代的
+    - WebAssembly対応により将来の展開も容易
+    - 型システムがバグを設計段階で排除
+
+    **リスク評価:** 技術的メリットは明確。採用を推奨。
+
+    ```
+    MELCHIOR: APPROVE ✓
+    confidence: 0.87
+    basis: technical_merit
+    ```
+  </Card>
+  <Card title="BALTHASAR-2 — 母" icon="heart">
+    **判定: REJECT**
+
+    **論拠:**
+    - チームの学習曲線が急峻（3〜6ヶ月）
+    - 既存メンバーの負担増によるモチベーション低下リスク
+    - 採用市場でRustエンジニアの確保が困難
+    - メンバーの燃え尽きを防ぐべき
+
+    **リスク評価:** チームの持続可能性を優先すべき。
+
+    ```
+    BALTHASAR: REJECT ✗
+    confidence: 0.72
+    basis: team_wellbeing
+    ```
+  </Card>
+  <Card title="CASPER-3 — 女" icon="random">
+    **判定: CONDITIONAL APPROVE**
+
+    **論拠:**
+    - 全面採用ではなく、パフォーマンスクリティカルなモジュールのみに限定
+    - 既存のTypeScriptコードベースとの共存を前提とする
+    - 3名の先行チームで2スプリント試行し、成果で判断
+    - 失敗しても撤退コストが限定的
+
+    **リスク評価:** 段階的アプローチなら許容可能。
+
+    ```
+    CASPER: CONDITIONAL APPROVE △
+    confidence: 0.81
+    basis: pragmatic_compromise
+    ```
+  </Card>
+</CardGrid>
+
+### 合議結果
+
+```
+╔═══════════════════════════════════════════════╗
+║          M A G I   V E R D I C T              ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  MELCHIOR-1:  APPROVE              ✓         ║
+║  BALTHASAR-2: REJECT               ✗         ║
+║  CASPER-3:    CONDITIONAL APPROVE   △         ║
+║                                               ║
+║  ─────────────────────────────────────────    ║
+║                                               ║
+║  FINAL: CONDITIONAL APPROVE                   ║
+║                                               ║
+║  決定: Rustを限定的に試験採用する。            ║
+║  パフォーマンスクリティカルなモジュールに       ║
+║  限定し、3名体制で2スプリント検証後に          ║
+║  全面採用を再評価する。                        ║
+║                                               ║
+║  PATTERN: BLUE                                ║
+║  SYNC RATE: 94.2%                             ║
+╚═══════════════════════════════════════════════╝
+```
+
+---
+
+## デモ: 「使徒接近 — 本番障害対応」
+
+問い: **「本番DBのレプリケーション遅延が30秒を超えた。フェイルオーバーすべきか？」**
+
+<CardGrid>
+  <Card title="MELCHIOR-1" icon="warning">
+    **APPROVE** — 30秒超は閾値を大幅に超過。データ不整合リスクが増大中。即座にフェイルオーバーを実行すべき。
+  </Card>
+  <Card title="BALTHASAR-2" icon="heart">
+    **REJECT** — フェイルオーバーは一時的なダウンタイムを伴う。深夜帯なら影響は限定的だが、ユーザーへの事前通知なしの切り替えは避けたい。
+  </Card>
+  <Card title="CASPER-3" icon="random">
+    **APPROVE** — 遅延がさらに拡大する前に実行。ただし、ステータスページの更新とSlack通知を同時に行うこと。
+  </Card>
+</CardGrid>
+
+```
+VERDICT: APPROVE (2-1)
+→ フェイルオーバーを実行。ステータスページ更新 + Slack通知を同時発行。
+→ 完了後にポストモーテムを自動起票。
+```
+
+---
+
+## デモ: 「人類補完計画 — 四半期OKR策定」
+
+問い: **「Q3のOKRとして『売上2倍』を掲げるべきか？」**
+
+<CardGrid>
+  <Card title="MELCHIOR-1" icon="seti:notebook">
+    **REJECT** — 現在の成長率(MoM 15%)から外挿すると、四半期で2倍は非現実的。達成不可能なOKRはチームの士気を損なう。1.5倍が統計的に妥当。
+  </Card>
+  <Card title="BALTHASAR-2" icon="heart">
+    **REJECT** — 前四半期も1.8倍の目標を掲げて1.3倍に終わった。未達の繰り返しはチームに「どうせ無理」という学習性無力感を植え付ける。
+  </Card>
+  <Card title="CASPER-3" icon="random">
+    **APPROVE** — ストレッチゴールとして設定し、1.5倍をコミット目標、2倍をアスピレーション目標とする二段階構造にすれば機能する。
+  </Card>
+</CardGrid>
+
+```
+VERDICT: REJECT (2-1)
+→ Q3 OKR: コミット目標 1.5倍 / ストレッチ目標 2倍 の二段階構造を採用。
+→ CASPER の折衷案を最終決定に反映。
+```
+
+<Aside type="caution" title="碇ゲンドウからの伝言">
+「問題ない。すべてはシナリオ通りだ。」
+</Aside>
+
+---
+
+## WorkWithAGI の MAGI モード
+
+WorkWithAGI SDK では、この合議メカニズムを `magi` モードとして実装しています:
+
+```typescript
+import { WorkAGI } from "@working-with-agi/sdk";
+
+const result = await WorkAGI.magi({
+  question: "次のプロジェクトで Rust を採用すべきか？",
+  context: projectData,
+  agents: [
+    { name: "MELCHIOR", perspective: "technical_merit" },
+    { name: "BALTHASAR", perspective: "team_impact" },
+    { name: "CASPER", perspective: "pragmatic_balance" },
+  ],
+});
+
+console.log(result.verdict);    // "CONDITIONAL APPROVE"
+console.log(result.votes);      // [APPROVE, REJECT, CONDITIONAL_APPROVE]
+console.log(result.reasoning);  // 統合された最終判断の理由
+```
+
+3つのエージェントが同時に起動し、それぞれの視座から独立に分析。投票と合議を経て、多角的に検証された結論を導きます。
+
+*「人は自分が望むものしか見ない。MAGIは望まない視点も見せる。」*

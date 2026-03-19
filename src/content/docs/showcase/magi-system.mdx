@@ -1,0 +1,157 @@
+---
+title: MAGI System Demo
+description: Multi-agent deliberation system — 3 Wise Agents
+---
+
+import { Card, CardGrid, Aside } from "@astrojs/starlight/components";
+
+<Aside type="tip" title="About this page">
+A concept demo of the MAGI System. Evangelion fans, please forgive us.
+</Aside>
+
+## MAGI System — Deliberation by Three Wise Agents
+
+```
+┌─────────────────────────────────────────────────┐
+│              N E R V   M A G I                  │
+│         SUPER-COMPUTER   SYSTEM                 │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│   ┌─────────┐  ┌─────────┐  ┌─────────┐       │
+│   │MELCHIOR │  │BALTHASAR│  │ CASPER  │       │
+│   │   -1    │  │   -2    │  │   -3    │       │
+│   │         │  │         │  │         │       │
+│   │Scientist│  │ Mother  │  │ Woman   │       │
+│   └────┬────┘  └────┬────┘  └────┬────┘       │
+│        │            │            │             │
+│        ▼            ▼            ▼             │
+│   ┌─────────────────────────────────────┐      │
+│   │     MAJORITY  VOTE  PROTOCOL        │      │
+│   │    APPROVE / REJECT / ABSTAIN       │      │
+│   └─────────────────────────────────────┘      │
+│                     │                           │
+│                     ▼                           │
+│              【 F I N A L 】                    │
+│                                                 │
+│   STATUS: OPERATIONAL                           │
+│   PATTERN: BLUE                                 │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Demo: "Should we adopt Rust for the next project?"
+
+<CardGrid>
+  <Card title="MELCHIOR-1 — Scientist" icon="seti:rust">
+    **Verdict: APPROVE**
+
+    Memory safety eliminates an entire class of production bugs. Performance matches C++ with a modern DX. WASM support opens future avenues. The type system catches bugs at design time.
+
+    ```
+    MELCHIOR: APPROVE ✓
+    confidence: 0.87
+    basis: technical_merit
+    ```
+  </Card>
+  <Card title="BALTHASAR-2 — Mother" icon="heart">
+    **Verdict: REJECT**
+
+    The learning curve is steep (3-6 months). Increased burden risks team burnout. Hiring Rust engineers is difficult. We should protect the team's sustainability.
+
+    ```
+    BALTHASAR: REJECT ✗
+    confidence: 0.72
+    basis: team_wellbeing
+    ```
+  </Card>
+  <Card title="CASPER-3 — Woman" icon="random">
+    **Verdict: CONDITIONAL APPROVE**
+
+    Don't go all-in. Use Rust only for performance-critical modules. Coexist with the existing TypeScript codebase. Trial with 3 people for 2 sprints. Retreat cost is limited if it fails.
+
+    ```
+    CASPER: CONDITIONAL APPROVE △
+    confidence: 0.81
+    basis: pragmatic_compromise
+    ```
+  </Card>
+</CardGrid>
+
+### Verdict
+
+```
+╔═══════════════════════════════════════════════╗
+║          M A G I   V E R D I C T              ║
+╠═══════════════════════════════════════════════╣
+║                                               ║
+║  MELCHIOR-1:  APPROVE              ✓         ║
+║  BALTHASAR-2: REJECT               ✗         ║
+║  CASPER-3:    CONDITIONAL APPROVE   △         ║
+║                                               ║
+║  FINAL: CONDITIONAL APPROVE                   ║
+║                                               ║
+║  Trial adoption of Rust for perf-critical     ║
+║  modules only. 3-person team, 2 sprints.      ║
+║  Full adoption re-evaluated after results.    ║
+║                                               ║
+║  PATTERN: BLUE                                ║
+║  SYNC RATE: 94.2%                             ║
+╚═══════════════════════════════════════════════╝
+```
+
+---
+
+## Demo: "Angel Approaching — Production Incident"
+
+Query: **"Primary DB replication lag exceeded 30 seconds. Failover?"**
+
+<CardGrid>
+  <Card title="MELCHIOR-1" icon="warning">
+    **APPROVE** — 30s exceeds threshold significantly. Data inconsistency risk growing. Execute failover immediately.
+  </Card>
+  <Card title="BALTHASAR-2" icon="heart">
+    **REJECT** — Failover causes brief downtime. Prefer user notification first. Unannounced switchover should be avoided.
+  </Card>
+  <Card title="CASPER-3" icon="random">
+    **APPROVE** — Act before lag grows worse. But update the status page and fire Slack notification simultaneously.
+  </Card>
+</CardGrid>
+
+```
+VERDICT: APPROVE (2-1)
+→ Execute failover. Status page update + Slack notification in parallel.
+→ Auto-create postmortem ticket after completion.
+```
+
+<Aside type="caution" title="Message from Gendo Ikari">
+"There's no problem. Everything is going according to the scenario."
+</Aside>
+
+---
+
+## MAGI Mode in WorkWithAGI
+
+The WorkWithAGI SDK implements this deliberation mechanism as `magi` mode:
+
+```typescript
+import { WorkAGI } from "@working-with-agi/sdk";
+
+const result = await WorkAGI.magi({
+  question: "Should we adopt Rust for the next project?",
+  context: projectData,
+  agents: [
+    { name: "MELCHIOR", perspective: "technical_merit" },
+    { name: "BALTHASAR", perspective: "team_impact" },
+    { name: "CASPER", perspective: "pragmatic_balance" },
+  ],
+});
+
+console.log(result.verdict);    // "CONDITIONAL_APPROVE"
+console.log(result.votes);      // [APPROVE, REJECT, CONDITIONAL_APPROVE]
+console.log(result.reasoning);  // Synthesized final reasoning
+```
+
+Three agents launch simultaneously, each analyzing independently from their perspective. Through voting and deliberation, they produce conclusions validated from multiple angles.
+
+*"People can only see what they want to see. MAGI shows you what you don't want to see."*
