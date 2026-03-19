@@ -1,146 +1,125 @@
 ---
 title: Architecture
-description: System architecture and component overview of WorkWithAGI
+description: Work with AI system architecture — a scalable AI workspace built on Aether Platform
 ---
 
-## System Overview
+## Overview
 
-WorkWithAGI consists of two core subsystems — **AI Terminal** and **KnowledgeHub** — each independently deployable and accessible through a unified SDK.
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Your Application                  │
-│                                                     │
-│   WorkAGI.terminal()         WorkAGI.knowledgeHub() │
-│        │                            │               │
-└────────┼────────────────────────────┼───────────────┘
-         │                            │
-    WebSocket (wss://)           REST API (HTTPS)
-         │                            │
-┌────────▼──────────┐   ┌────────────▼──────────────┐
-│  agiterm-server   │   │    KnowledgeHub Server    │
-│                   │   │                           │
-│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
-│  │ PTY Manager │  │   │  │  Document Ingestion  │  │
-│  └─────────────┘  │   │  └─────────────────────┘  │
-│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
-│  │  AI Agent   │  │   │  │  Embedding Engine    │  │
-│  └─────────────┘  │   │  └─────────────────────┘  │
-│  ┌─────────────┐  │   │  ┌─────────────────────┐  │
-│  │  Session &  │  │   │  │  Semantic Search     │  │
-│  │   Pane Mgmt │  │   │  └─────────────────────┘  │
-│  └─────────────┘  │   │  ┌─────────────────────┐  │
-│  ┌─────────────┐  │   │  │  Vector Store        │  │
-│  │   Threat    │  │   │  │  (Qdrant)            │  │
-│  │  Detection  │  │   │  └─────────────────────┘  │
-│  └─────────────┘  │   └───────────────────────────┘
-└───────────────────┘
-```
-
-## AI Terminal
-
-The terminal subsystem provides browser-based access to a real PTY (pseudo-terminal) with AI assistance.
-
-### Connection Flow
-
-1. **Session creation** — Client calls `POST /api/v1/sessions` via the REST API to allocate a PTY and receive a `session_id`
-2. **WebSocket upgrade** — Client connects to `wss://server/ws/sdk/{session_id}` for real-time I/O
-3. **Binary frames** — Raw PTY input/output is transmitted as binary WebSocket frames
-4. **Text frames** — Control messages (resize, ping/pong) are sent as JSON text frames
+Work with AI is built on **Aether Platform**. **AGI Terminal** runs on Kubernetes, scalably processing AI workloads from any service.
 
 ```
-Browser (xterm.js)
-    │
-    ├── Binary frame →  PTY stdin
-    ├── Binary frame ←  PTY stdout
-    │
-    ├── Text: {"type": "resize", "cols": 120, "rows": 40}
-    └── Text: {"type": "ping"} / {"type": "pong"}
+┌─────────────────────────────────────────────────────────┐
+│                  Your Application                        │
+│                                                         │
+│   @work-with-ai/vue      @work-with-ai/react            │
+│         │                       │                       │
+└─────────┼───────────────────────┼───────────────────────┘
+          │                       │
+     WebSocket (wss://)      WebSocket (wss://)
+          │                       │
+┌─────────▼───────────────────────▼───────────────────────┐
+│                  Aether Platform                         │
+│                                                         │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │              AGI Terminal (agiterm)                 │  │
+│  │                                                    │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │  │
+│  │  │ Session  │  │   PTY    │  │   Skill Injector │  │  │
+│  │  │ Manager  │  │ Manager  │  │   + Credentials  │  │  │
+│  │  └──────────┘  └──────────┘  └──────────────────┘  │  │
+│  │                                                    │  │
+│  │  ┌──────────────────────────────────────────────┐  │  │
+│  │  │            MAGI Engine (deliberation AI)      │  │  │
+│  │  │  Agent A ←── NATS ──→ Agent B ──→ Agent C    │  │  │
+│  │  │  (pros)               (cons)      (neutral)   │  │  │
+│  │  └──────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                                         │
+│  ┌──────────────────┐  ┌──────────────────────────────┐  │
+│  │  Knowledge Hub   │  │      Skill Registry          │  │
+│  │  ┌────────────┐  │  │  ┌────────────────────────┐  │  │
+│  │  │ Ingestion  │  │  │  │ SKILL.md (per provider)│  │  │
+│  │  │ Embedding  │  │  │  │ CLAUDE.md (context)    │  │  │
+│  │  │ Qdrant     │  │  │  └────────────────────────┘  │  │
+│  │  └────────────┘  │  └──────────────────────────────┘  │
+│  └──────────────────┘                                    │
+│                                                         │
+│  ┌──────────────────────────────────────────────────────┐│
+│  │            Kubernetes Infrastructure                 ││
+│  │  Multi-tenant isolation · Auto-scaling · Resources   ││
+│  └──────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Key Components
+## Layers
+
+### Frontend Layer
+
+Embed `@work-with-ai/vue` or other framework components in your application. Users start working with AI through a software-like interface.
+
+- Vue / React / Angular support
+- WebSocket connection to AGI Terminal
+- xterm.js rendering (transparent to users)
+
+### AGI Terminal (agiterm)
+
+AI agent execution environment on Aether Platform. Each session spawns a sandboxed container for safe agent execution.
+
+**Session lifecycle:**
+
+1. **Provision** — Create sandbox container / workspace
+2. **Inject** — Write skills (SKILL.md), context (CLAUDE.md), and credentials (`.agiterm/credentials/`, 0600) into workspace
+3. **Start** — Launch AI CLI in the workspace
+
+```
+{workspace}/
+├── .claude/agents/skills/{provider}/
+│   └── SKILL.md
+├── .agiterm/credentials/
+│   ├── token     (0600)
+│   └── api_url   (0600)
+└── CLAUDE.md
+```
+
+### MAGI Engine
+
+Multiple AI agents collaborate from different perspectives within AGI Terminal. Real-time inter-agent communication via NATS messaging.
+
+- **Three perspectives**: Pros / Cons / Neutral
+- **Deliberation**: Conclusions verified from multiple angles
+- **NATS backbone**: Real-time agent communication
+
+### Knowledge Hub
+
+Knowledge management subsystem for documents and data.
 
 | Component | Role |
 |-----------|------|
-| **PTY Manager** | Spawns and manages pseudo-terminal processes |
-| **Session Manager** | Tracks sessions, panes, and layout trees |
-| **AI Agent** | Provides contextual AI assistance within the terminal |
-| **Threat Detection** | Analyzes commands for security risks before execution |
+| **Ingestion** | Documents, code, wiki intake |
+| **Embedding Engine** | Text to vector conversion |
+| **Qdrant** | Vector database |
+| **Semantic Search** | Meaning-based retrieval |
 
-### REST API Endpoints
+Knowledge Hub provides "what AI knows".
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/tools` | List available AI CLI tools |
-| `POST` | `/api/v1/sessions` | Create a new terminal session |
-| `GET` | `/api/v1/sessions` | List all sessions |
-| `DELETE` | `/api/v1/sessions/:id` | Destroy a session |
-| `POST` | `/api/v1/sessions/:id/resize` | Resize session PTY |
-| `POST` | `/api/v1/sessions/:id/panes` | Add a pane to workspace |
-| `DELETE` | `/api/v1/sessions/:id/panes/:paneId` | Remove a pane |
-| `GET` | `/api/v1/sessions/:id/layout` | Get workspace layout tree |
-| `GET` | `/api/v1/health` | Health check |
+### Skill Registry
 
-## KnowledgeHub
+Register and manage skills that run on top of Knowledge Hub. Skills are defined as `SKILL.md` files, injected into the workspace at session creation.
 
-KnowledgeHub is the knowledge management subsystem that ingests documents and code, builds semantic indexes, and provides intelligent search across your organization's knowledge base.
+Skill Registry defines "what AI can do". AI follows SKILL.md instructions to operate your systems.
 
-### Pipeline
+### Kubernetes Infrastructure
 
-```
-Documents / Code / Wiki
-    │
-    ▼
-┌──────────────┐     ┌──────────────────┐     ┌────────────┐
-│   Ingestion  │ ──▶ │ Embedding Engine  │ ──▶ │   Qdrant   │
-│              │     │                  │     │ Vector DB  │
-└──────────────┘     └──────────────────┘     └─────┬──────┘
-                                                    │
-User query ──▶ Embed query ──▶ Semantic search ─────┘
-                                    │
-                                    ▼
-                          Ranked results
-                   (source, section, score, snippet)
-```
+AGI Terminal scales on Kubernetes.
 
-### Key Capabilities
+- **Multi-tenant isolation** — Per-tenant resource limits and network isolation
+- **Auto-scaling** — AGI Terminal pods scale on demand
+- **NATS** — Internal only (not exposed to internet)
 
-- **Multi-source ingestion** — Code repositories, documentation, wikis, and internal knowledge bases
-- **Semantic search** — Find information by meaning, not just keywords
-- **Incremental indexing** — Automatic re-indexing when sources change
-- **Context-aware retrieval** — Results ranked by relevance with source attribution
+## Services on Aether Platform
 
-## SDK Layers
+Work with AI is embedded in various services.
 
-The client SDK is structured as a monorepo with framework-specific packages built on a shared core:
-
-```
-@working-with-agi/sdk  (core)
-    │
-    ├── @working-with-agi/react
-    ├── @working-with-agi/vue
-    └── @working-with-agi/angular
-```
-
-The core package provides:
-
-- **`WorkAGI.api()`** — REST client for session management
-- **`WorkAGI.connect()`** — Headless WebSocket terminal (no UI)
-- **`WorkAGI.terminal()`** — Rendered terminal with xterm.js
-- **`WorkAGI.knowledgeHub()`** — KnowledgeHub client
-
-## Deployment
-
-Both subsystems are fully self-hostable. No data leaves your infrastructure unless you opt into the managed service.
-
-```bash
-# Self-hosted deployment
-git clone https://github.com/working-with-agi/self-hosted.git
-cd self-hosted
-docker compose up -d
-```
-
-The Docker Compose stack includes:
-- **agiterm-server** — Terminal backend
-- **KnowledgeHub** — Ingestion, embedding, and search pipeline
-- **Qdrant** — Vector database
+| Service | Description |
+|---------|-------------|
+| [**Secretary.IO**](https://secretary.io) | Meeting intelligence — AI-powered meeting analysis, action item extraction, and project management |
