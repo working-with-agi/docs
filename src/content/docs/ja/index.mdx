@@ -1,94 +1,108 @@
 ---
 title: WorkWithAGI SDK
-description: AI ターミナルとセマンティックコード検索をアプリに組み込む
+description: あなたのサービスにAIアシスタントを組み込む
 template: splash
 hero:
-  tagline: AI ターミナルと RAG コード検索を、お好みのフレームワークで。すぐに出荷できる SDK。
+  tagline: |
+    あなたのサービスにAIを組み込み、ユーザーが「これやって」と頼むだけで、
+    データ分析・レポート作成・タスク実行をAIが自律的にこなす体験を提供します。
   actions:
     - text: はじめる
       link: /ja/getting-started/
       icon: right-arrow
       variant: primary
-    - text: ショーケースを見る
+    - text: 導入事例を見る
       link: /ja/showcase/
       variant: minimal
 ---
 
 import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
 
-## 何が手に入るか
+## あなたのサービスに、AIの力を
+
+ユーザーがAIに自然言語で指示を出し、AIがデータを読み取り、分析し、結果を返す——そんな体験を、あなたのプロダクトに数行のコードで追加できます。
 
 <CardGrid stagger>
-  <Card title="AI ターミナル" icon="laptop">
-    AI アシスタント内蔵の Web ターミナルを、任意の Web アプリに埋め込み。コマンド実行、脅威検知、セッション記録に対応。
+  <Card title="AIと対話して作業する" icon="laptop">
+    ユーザーは画面上でAIに話しかけるように指示を出すだけ。「今月のレポートを作って」「問題があれば教えて」——AIがサービス内のデータを理解し、分析からアウトプットの生成まで自律的に進めます。
   </Card>
-  <Card title="RAG コード検索" icon="magnifier">
-    コードベースをインデックスし、キーワードではなく意図で検索。「認証ミドルウェアはどこ？」と聞けば、ファイル名と行番号が返る。
+  <Card title="あなたのデータを理解するAI" icon="magnifier">
+    サービスに蓄積されたデータ（ドキュメント、履歴、ナレッジベース）をAIが読み取り可能な形にインデックス化。ユーザーが「先月の売上が落ちた原因は？」と聞けば、関連する情報をAIが見つけて回答します。
   </Card>
-  <Card title="React / Vue / Angular" icon="puzzle">
-    お使いのフレームワーク向けネイティブコンポーネント。バニラ JS ならコア SDK を直接利用。
+  <Card title="複数AIの合議で判断する" icon="star">
+    MAGI（Multi Agent General Instrument）モード。3つのAIが賛成・反対・中立の立場からそれぞれ分析し、多数決で結論を出します。一方的な回答ではなく、多角的に検証された判断を提供します。
+  </Card>
+  <Card title="外部ツールとつながるAI" icon="puzzle">
+    カレンダー、プロジェクト管理、チャットツール——ユーザーが普段使っているサービスにAIが直接アクセス。「来週の空き時間に会議を入れて」「チケットを作って」といった操作もAIが代行します。
   </Card>
 </CardGrid>
 
-## フレームワークを選択
+---
+
+## MAGI — 3人の賢者による合議
+
+3つのAIが同時に起動し、それぞれ異なる視点から分析。投票と合議を経て、**一方的ではない、多角的に検証された結論**を導きます。
+
+[MAGI デモを見る →](/ja/showcase/magi-system/)
+
+---
+
+## 組み込みは簡単
+
+お使いのフレームワーク向けコンポーネントをインポートするだけ。
 
 <Tabs>
   <TabItem label="React">
   ```tsx
-  import { AgiTerminal, useCodeSearch } from "@working-with-agi/react";
+  import { WorkWithAI } from "@working-with-agi/react";
 
   function App() {
-    const { search } = useCodeSearch();
-    return <AgiTerminal theme="dark" ai onThreat={console.warn} />;
+    return <WorkWithAI theme="dark" ai />;
   }
   ```
   </TabItem>
   <TabItem label="Vue">
   ```vue
   <script setup>
-  import { AgiTerminal, useCodeSearch } from "@working-with-agi/vue";
-  const { search } = useCodeSearch();
+  import { WorkWithAI } from "@working-with-agi/vue";
   </script>
 
   <template>
-    <AgiTerminal theme="dark" ai @threat="console.warn" />
+    <WorkWithAI theme="dark" ai />
   </template>
   ```
   </TabItem>
   <TabItem label="Angular">
   ```typescript
-  import { AgiTerminalComponent, CodeSearchService } from "@working-with-agi/angular";
+  import { WorkWithAIComponent } from "@working-with-agi/angular";
 
   @Component({
-    imports: [AgiTerminalComponent],
-    template: `<agi-terminal theme="dark" [ai]="true" (threat)="onThreat($event)" />`,
+    imports: [WorkWithAIComponent],
+    template: `<work-with-ai theme="dark" [ai]="true" />`,
   })
-  export class AppComponent {
-    constructor(private codeSearch: CodeSearchService) {}
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vanilla JS">
-  ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
-
-  WorkAGI.terminal("#my-terminal", { theme: "dark", ai: true });
-  const hits = await WorkAGI.search("決済失敗時のリトライロジック");
+  export class AppComponent {}
   ```
   </TabItem>
 </Tabs>
 
-## パッケージ
+---
 
-| パッケージ | 説明 |
-|---|---|
-| `@working-with-agi/sdk` | コア SDK — バニラ JS、フレームワーク非依存 |
-| `@working-with-agi/react` | React コンポーネント + hooks |
-| `@working-with-agi/vue` | Vue 3 コンポーネント + composables |
-| `@working-with-agi/angular` | Angular コンポーネント + services |
+## 料金
 
-## 誰のための SDK か？
+AIクレジットベースのシンプルな料金体系。[詳細を見る →](/ja/pricing/)
 
-- **社内開発プラットフォームを構築中？** AI ターミナル + コード検索をゼロから作らず追加。
-- **開発者ツールを出荷中？** インテリジェントなコードナビゲーションを製品に組み込み。
-- **コーディング教育プラットフォーム？** ブラウザ上で AI アシスト付きターミナルを学生に提供。
+| プラン | 月額 | AIクレジット | 主な機能 |
+|---|---|---|---|
+| **Starter** | ¥4,980 | 2,000/月 | AI対話、データ検索、メールサポート |
+| **Business** ⭐ | ¥14,800 | 10,000/月 | 全機能、MAGI合議、チーム管理、優先サポート |
+| **Enterprise** | お問い合わせ | 無制限 | セルフホスト、SSO、SLA |
+
+---
+
+## どんなサービスに使えるか？
+
+- **SaaS プロダクト** — ユーザーがAIと対話しながら作業できるUIを追加
+- **社内ツール** — 社員が自然言語でデータに問いかけるインターフェース
+- **カスタマーサポート** — AIがナレッジベースから回答を自律生成
+- **データ分析** — 「売上の傾向を教えて」で即座にレポート生成
+- **教育プラットフォーム** — 学習者がAIアシスタントと対話しながら課題に取り組む

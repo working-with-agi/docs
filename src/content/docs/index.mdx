@@ -1,9 +1,11 @@
 ---
 title: WorkWithAGI SDK
-description: Embed AI terminals and semantic code search into your apps
+description: Add an AI assistant to your service
 template: splash
 hero:
-  tagline: Drop-in SDK for AI-powered terminals and RAG code search. Three lines of code to ship.
+  tagline: |
+    Add AI to your service so users can say "do this" and the AI handles
+    data analysis, report generation, and task execution autonomously.
   actions:
     - text: Get Started
       link: /getting-started/
@@ -16,79 +18,91 @@ hero:
 
 import { Card, CardGrid, Tabs, TabItem } from "@astrojs/starlight/components";
 
-## What you get
+## Bring AI to your service
+
+Users give instructions in natural language, and the AI reads their data, analyzes it, and delivers results — add this experience to your product with just a few lines of code.
 
 <CardGrid stagger>
-  <Card title="AI Terminal" icon="laptop">
-    Embed a fully functional web terminal with built-in AI assistant into any web app. Supports command execution, threat detection, and session recording.
+  <Card title="Work with AI, naturally" icon="laptop">
+    Users simply talk to the AI on screen. "Create this month's report." "Tell me if there are any problems." — the AI understands the data in your service and autonomously handles everything from analysis to output generation.
   </Card>
-  <Card title="RAG Code Search" icon="magnifier">
-    Index your codebase and search by intent, not keywords. Ask "where is the auth middleware?" and get exact file + line results.
+  <Card title="AI that understands your data" icon="magnifier">
+    Index the data in your service — documents, history, knowledge base — so the AI can read and reason about it. When users ask "Why did sales drop last month?", the AI finds the relevant information and answers.
   </Card>
-  <Card title="React / Vue / Angular" icon="puzzle">
-    Native components for your framework. Or use the core SDK directly for vanilla JS.
+  <Card title="Multi-AI deliberation" icon="star">
+    MAGI (Multi Agent General Instrument) mode. Three AIs analyze from different perspectives — for, against, and neutral — then reach a conclusion by majority vote. Not one-sided answers, but multi-faceted, verified judgments.
+  </Card>
+  <Card title="AI that connects to your tools" icon="puzzle">
+    Calendars, project management, chat tools — the AI directly accesses the services your users already use. "Schedule a meeting next week." "Create a ticket." — the AI handles it.
   </Card>
 </CardGrid>
 
-## Pick your framework
+---
+
+## MAGI — Deliberation by Three Wise Agents
+
+Three AIs launch simultaneously, each analyzing from a different perspective. Through voting and deliberation, they produce **conclusions validated from multiple angles**, not one-sided responses.
+
+[View MAGI Demo →](/showcase/magi-system/)
+
+---
+
+## Easy to integrate
+
+Import a component for your framework — that's it.
 
 <Tabs>
   <TabItem label="React">
   ```tsx
-  import { AgiTerminal, useCodeSearch } from "@working-with-agi/react";
+  import { WorkWithAI } from "@working-with-agi/react";
 
   function App() {
-    const { search } = useCodeSearch();
-    return <AgiTerminal theme="dark" ai onThreat={console.warn} />;
+    return <WorkWithAI theme="dark" ai />;
   }
   ```
   </TabItem>
   <TabItem label="Vue">
   ```vue
   <script setup>
-  import { AgiTerminal, useCodeSearch } from "@working-with-agi/vue";
-  const { search } = useCodeSearch();
+  import { WorkWithAI } from "@working-with-agi/vue";
   </script>
 
   <template>
-    <AgiTerminal theme="dark" ai @threat="console.warn" />
+    <WorkWithAI theme="dark" ai />
   </template>
   ```
   </TabItem>
   <TabItem label="Angular">
   ```typescript
-  import { AgiTerminalComponent, CodeSearchService } from "@working-with-agi/angular";
+  import { WorkWithAIComponent } from "@working-with-agi/angular";
 
   @Component({
-    imports: [AgiTerminalComponent],
-    template: `<agi-terminal theme="dark" [ai]="true" (threat)="onThreat($event)" />`,
+    imports: [WorkWithAIComponent],
+    template: `<work-with-ai theme="dark" [ai]="true" />`,
   })
-  export class AppComponent {
-    constructor(private codeSearch: CodeSearchService) {}
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vanilla JS">
-  ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
-
-  WorkAGI.terminal("#my-terminal", { theme: "dark", ai: true });
-  const hits = await WorkAGI.search("retry logic for failed payments");
+  export class AppComponent {}
   ```
   </TabItem>
 </Tabs>
 
-## Packages
+---
 
-| Package | Description |
-|---|---|
-| `@working-with-agi/sdk` | Core SDK — vanilla JS, framework-agnostic |
-| `@working-with-agi/react` | React components + hooks |
-| `@working-with-agi/vue` | Vue 3 components + composables |
-| `@working-with-agi/angular` | Angular components + services |
+## Pricing
 
-## Who is this for?
+Simple, AI credit-based pricing. [View details →](/pricing/)
 
-- **Building an internal dev platform?** Add AI terminal + code search without building from scratch.
-- **Shipping a developer tool?** Embed intelligent code navigation into your product.
-- **Running a coding education platform?** Give students an AI-assisted terminal in the browser.
+| Plan | Price | AI Credits | Key Features |
+|---|---|---|---|
+| **Starter** | $33/mo | 2,000/mo | AI conversations, data search, email support |
+| **Business** ⭐ | $99/mo | 10,000/mo | All features, MAGI deliberation, team mgmt, priority support |
+| **Enterprise** | Contact us | Unlimited | Self-hosted, SSO, SLA |
+
+---
+
+## What can you build?
+
+- **SaaS products** — Let users work with AI through natural conversation
+- **Internal tools** — Staff query data in natural language
+- **Customer support** — AI generates answers from your knowledge base
+- **Data analytics** — "Show me the sales trend" → instant report
+- **Education platforms** — Learners interact with an AI assistant while working on tasks
