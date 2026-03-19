@@ -20,6 +20,11 @@ import { Steps, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
   npm install @working-with-agi/sdk @working-with-agi/react
   ```
   </TabItem>
+  <TabItem label="Angular">
+  ```bash
+  npm install @working-with-agi/sdk @working-with-agi/angular
+  ```
+  </TabItem>
   <TabItem label="Vanilla JS">
   ```bash
   npm install @working-with-agi/sdk
@@ -75,17 +80,50 @@ console.log("Session ID:", session.id);
   </TabItem>
   <TabItem label="React">
   ```tsx
+  import { useRef } from "react";
   import { AgiTerminal } from "@working-with-agi/react";
+  import type { AgiTerminalHandle } from "@working-with-agi/react";
 
   export default function Terminal() {
+    const ref = useRef<AgiTerminalHandle>(null);
+
     return (
       <AgiTerminal
+        ref={ref}
         apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
         theme="dark"
-        ai
-        onCommand={(cmd) => console.log("Command:", cmd)}
+        onConnect={() => console.log("Connected")}
+        onDisconnect={() => console.log("Disconnected")}
       />
     );
+  }
+  ```
+  </TabItem>
+  <TabItem label="Angular">
+  ```typescript
+  import { Component } from "@angular/core";
+  import { AgiTerminalComponent } from "@working-with-agi/angular";
+
+  @Component({
+    selector: "app-terminal",
+    standalone: true,
+    imports: [AgiTerminalComponent],
+    template: `
+      <agi-terminal
+        [endpoint]="endpoint"
+        [apiKey]="apiKey"
+        theme="dark"
+        (connected)="onConnect()"
+      ></agi-terminal>
+    `,
+  })
+  export class TerminalComponent {
+    endpoint = "https://api.workwithagi.dev";
+    apiKey = "your-api-key";
+
+    onConnect() {
+      console.log("Connected");
+    }
   }
   ```
   </TabItem>
