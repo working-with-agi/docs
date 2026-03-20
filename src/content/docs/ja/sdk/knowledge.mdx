@@ -12,84 +12,76 @@ import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 `KnowledgeClient` は、ドキュメントの取り込み、セマンティック検索、コンテキスト取得を管理します。
 
 ```typescript
-import { AgiApiClient } from "@working-with-agi/sdk";
+import { KnowledgeClient } from "@work-with-ai/sdk";
 
-const client = new AgiApiClient({
-  apiKey: "your-api-key",
-  endpoint: "https://api.workwithagi.dev",
-});
-
-const knowledge = client.knowledge("my-project");
+const knowledge = new KnowledgeClient(
+  "https://api.workwithagi.dev",
+  "your-api-key",
+);
 ```
 
 ### ドキュメントのアップロード
 
+`File` または `Blob` をナレッジベースにアップロードします。既存のドキュメントを置き換えるには、オプションでドキュメント ID を指定できます。
+
 ```typescript
-// 単一ファイルのアップロード
-await knowledge.upload("./docs/architecture.md");
+// File のアップロード（例: <input> 要素から取得）
+const result = await knowledge.upload(file);
+console.log(result.document_id); // "doc_abc123"
+console.log(result.filename);    // "architecture.md"
+console.log(result.chunk_count); // 42
 
-// 複数ファイルのアップロード
-await knowledge.upload([
-  "./docs/architecture.md",
-  "./docs/api-reference.md",
-  "./src/auth/README.md",
-]);
+// 明示的なドキュメント ID を指定してアップロード（既存の場合は置き換え）
+await knowledge.upload(file, "my-custom-id");
 
-// メタデータ付きアップロード
-await knowledge.upload("./docs/runbook.md", {
-  category: "operations",
-  tags: ["production", "incident-response"],
-});
-
-// テキストの直接取り込み
-await knowledge.ingest({
-  content: "デプロイプロセスには 2 名のレビュアーの承認が必要です。",
-  source: "team-guidelines",
-  category: "process",
-});
+// Blob のアップロード
+const blob = new Blob(
+  ["The deployment process requires approval from two reviewers."],
+  { type: "text/plain" },
+);
+await knowledge.upload(blob, "team-guidelines");
 ```
 
 ### 検索
 
-セマンティック検索は、関連性スコアでランク付けされた関連パッセージを返します。
+セマンティック検索は、関連性スコアでランク付けされた関連チャンクを返します:
 
 ```typescript
-const results = await knowledge.search("認証エラーの処理方法");
+const response = await knowledge.search("how to handle authentication errors");
 
-for (const hit of results) {
-  console.log(`[${hit.score.toFixed(2)}] ${hit.source}:${hit.section}`);
-  console.log(hit.snippet);
+console.log(response.query); // "how to handle authentication errors"
+for (const hit of response.results) {
+  console.log(`[${hit.score.toFixed(2)}] ${hit.filename} (chunk ${hit.chunk_index})`);
+  console.log(hit.chunk);
 }
-// → [0.92] docs/auth.md:エラーハンドリング
-//   認証エラーが発生した場合、ミドルウェアは 401 を返します...
+// → [0.92] auth.md (chunk 3)
+//   When an authentication error occurs, the middleware returns a 401...
 ```
 
-フィルターで結果を絞り込めます。
+結果の件数を制限したり、ドキュメント ID でフィルタリングできます:
 
 ```typescript
-const results = await knowledge.search("デプロイ手順", {
-  category: "operations",
-  source: "runbook.md",
-  limit: 5,
-  minScore: 0.7,
-});
+// 最大 5 件の結果を返し、特定のドキュメントに絞り込む
+const response = await knowledge.search("deployment steps", 5, "runbook-doc-id");
 ```
 
 ### AI 向けコンテキスト
 
-AI モデルに渡すためにフォーマットされたコンテキストを取得します。
+AI モデルに直接渡すのに適した、事前フォーマット済みのコンテキストを取得します:
 
 ```typescript
-const context = await knowledge.context("キャッシュ戦略を説明して", {
-  maxTokens: 2000,
-  format: "markdown", // "markdown" | "plain" | "json"
-});
+const response = await knowledge.context("explain our caching strategy", 5);
 
-// エージェントまたはターミナルセッションに渡す
-await client.agents.run(agentId, {
-  task: "キャッシュ戦略を要約してください",
-  context: context.text,
-});
+console.log(response.query);   // "explain our caching strategy"
+console.log(response.context); // 上位マッチチャンクを結合したテキスト
+```
+
+### ドキュメントの削除
+
+ドキュメントとそのインデックス済みチャンクをすべて削除します:
+
+```typescript
+await knowledge.remove("doc_abc123");
 ```
 
 ## 外部ソースの同期
@@ -98,36 +90,45 @@ await client.agents.run(agentId, {
 
 ```typescript
 // Google Drive
-await knowledge.sync.connect({
+await knowledge.connect({
   provider: "google-drive",
-  credentials: { serviceAccountKey: "..." },
-  folderId: "1a2b3c4d5e",
+  name: "Engineering Docs",
+  config: { folder_id: "1a2b3c4d5e", service_account_key: "..." },
   schedule: "0 */6 * * *", // 6 時間ごと
 });
 
 // SharePoint
-await knowledge.sync.connect({
+await knowledge.connect({
   provider: "sharepoint",
-  credentials: { tenantId: "...", clientId: "...", clientSecret: "..." },
-  siteUrl: "https://company.sharepoint.com/sites/engineering",
-  libraryName: "Documents",
+  name: "Engineering Site",
+  config: {
+    tenant_id: "...",
+    client_id: "...",
+    client_secret: "...",
+    site_url: "https://company.sharepoint.com/sites/engineering",
+    library_name: "Documents",
+  },
   schedule: "0 2 * * *", // 毎日午前 2 時
 });
 
 // Notion
-await knowledge.sync.connect({
+await knowledge.connect({
   provider: "notion",
-  credentials: { integrationToken: "..." },
-  databaseIds: ["abc123", "def456"],
+  name: "Product Wiki",
+  config: { integration_token: "...", database_ids: "abc123,def456" },
   schedule: "0 */4 * * *", // 4 時間ごと
 });
 
 // Confluence
-await knowledge.sync.connect({
+await knowledge.connect({
   provider: "confluence",
-  credentials: { apiToken: "...", email: "..." },
-  baseUrl: "https://company.atlassian.net",
-  spaceKeys: ["ENG", "OPS"],
+  name: "Eng & Ops Spaces",
+  config: {
+    api_token: "...",
+    email: "...",
+    base_url: "https://company.atlassian.net",
+    space_keys: "ENG,OPS",
+  },
   schedule: "0 3 * * *",
 });
 ```
@@ -136,21 +137,30 @@ await knowledge.sync.connect({
   すべての認証情報は保存時に暗号化されます。セルフホスト環境では、認証情報は自前の Vault インスタンスに保存されます。
 </Aside>
 
+### サポートされる同期プロバイダー
+
+`"google-drive"` | `"dropbox"` | `"notion"` | `"confluence"` | `"sharepoint"` | `"github"` | `"s3"`
+
 ### 同期接続の管理
 
 ```typescript
-// アクティブな接続を一覧表示
-const connections = await knowledge.sync.list();
+// すべての接続を一覧表示
+const connections = await knowledge.connections();
+for (const conn of connections) {
+  console.log(`${conn.name} (${conn.provider}): ${conn.status}, ${conn.doc_count} docs`);
+  // → "Engineering Docs (google-drive): active, 128 docs"
+}
 
 // 手動同期をトリガー
-await knowledge.sync.run("connection-id");
+const result = await knowledge.sync("connection-id");
+console.log(result.added, result.updated, result.removed);
 
-// 同期ステータスを確認
-const status = await knowledge.sync.status("connection-id");
-console.log(status.lastSync, status.documentCount, status.errors);
+// 接続の一時停止 / 再開
+await knowledge.pause("connection-id");
+await knowledge.resume("connection-id");
 
 // ソースを切断
-await knowledge.sync.disconnect("connection-id");
+await knowledge.disconnect("connection-id");
 ```
 
 ## サポートされるファイル形式
@@ -168,57 +178,55 @@ await knowledge.sync.disconnect("connection-id");
   バイナリファイル（画像、動画、コンパイル済みバイナリ）は自動的にスキップされます。オフィスファイルはインデックス前にテキストに変換されます。
 </Aside>
 
-## コンポーネントでの利用
+## スタンドアロン利用例
+
+`KnowledgeClient` は、任意の TypeScript または JavaScript アプリケーションで直接使用できます:
 
 <Tabs>
-  <TabItem label="Vue">
-  ```vue
-  <script setup>
-  import { useKnowledgeHub } from "@working-with-agi/vue";
+  <TabItem label="Node.js">
+  ```typescript
+  import { KnowledgeClient } from "@work-with-ai/sdk";
+  import { readFile } from "node:fs/promises";
 
-  const { search, results, loading } = useKnowledgeHub({
-    apiKey: import.meta.env.VITE_AGI_KEY,
-    index: "my-project",
-  });
-  </script>
+  const knowledge = new KnowledgeClient(
+    "https://api.workwithagi.dev",
+    process.env.AGI_API_KEY,
+  );
 
-  <template>
-    <input
-      @input="search($event.target.value)"
-      placeholder="ナレッジを検索..."
-      :disabled="loading"
-    />
-    <div v-for="hit in results" :key="hit.source + hit.section">
-      <strong>{{ hit.source }}</strong> &mdash; {{ hit.snippet }}
-    </div>
-  </template>
+  // ファイルを Blob としてアップロード
+  const buffer = await readFile("./docs/architecture.md");
+  const blob = new Blob([buffer], { type: "text/markdown" });
+  const { document_id } = await knowledge.upload(blob, "architecture");
+
+  // 検索してコンテキストを利用
+  const { context } = await knowledge.context("how does authentication work?");
+  console.log(context);
   ```
   </TabItem>
-  <TabItem label="React">
-  ```tsx
-  import { useKnowledgeHub } from "@working-with-agi/react";
+  <TabItem label="Browser">
+  ```typescript
+  import { KnowledgeClient } from "@work-with-ai/sdk";
 
-  export default function Search() {
-    const { search, results, loading } = useKnowledgeHub({
-      apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
-      index: "my-project",
-    });
+  const knowledge = new KnowledgeClient(
+    "https://api.workwithagi.dev",
+    "your-api-key",
+  );
 
-    return (
-      <div>
-        <input
-          onChange={(e) => search(e.target.value)}
-          placeholder="ナレッジを検索..."
-          disabled={loading}
-        />
-        {results.map((hit) => (
-          <div key={hit.source + hit.section}>
-            <strong>{hit.source}</strong> &mdash; {hit.snippet}
-          </div>
-        ))}
-      </div>
-    );
-  }
+  // ファイル入力からアップロード
+  const input = document.querySelector<HTMLInputElement>("#file-input")!;
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (file) {
+      const result = await knowledge.upload(file);
+      console.log(`Uploaded ${result.filename}: ${result.chunk_count} chunks`);
+    }
+  });
+
+  // 検索
+  const { results } = await knowledge.search("deployment process", 5);
+  results.forEach((hit) => {
+    console.log(`[${hit.score.toFixed(2)}] ${hit.filename}: ${hit.chunk}`);
+  });
   ```
   </TabItem>
 </Tabs>

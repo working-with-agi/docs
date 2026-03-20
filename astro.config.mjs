@@ -103,6 +103,11 @@ export default defineConfig({
               translations: { ja: "アーキテクチャ" },
               link: "/architecture/",
             },
+            {
+              label: "Security",
+              translations: { ja: "セキュリティ" },
+              link: "/security/",
+            },
           ],
         },
         {

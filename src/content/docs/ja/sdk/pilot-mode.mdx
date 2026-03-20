@@ -3,194 +3,323 @@ title: パイロットモード
 description: フローティング AI ターミナルとバックグラウンドエージェントペイン
 ---
 
-import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
 
 パイロットモードは、フローティングメインターミナルと折りたたみ可能なバックグラウンドエージェントペインを提供します。人間のオペレータがメインターミナルを操作しながら、AI エージェントが並行して作業するワークフロー向けに設計されています。
+
+<Aside type="note">
+  `AgiPilot` は Vue パッケージ（`@work-with-ai/vue`）でのみ利用可能です。React および Angular にはこのコンポーネントは含まれていません。
+</Aside>
 
 ## 概要
 
 `AgiPilot` コンポーネントは以下をレンダリングします:
 
-- **メインターミナル** — ドラッグ・リサイズ可能なフローティングパネル（インタラクティブ操作用）
-- **エージェントペイン** — 自律タスクを実行し、結果を報告するバックグラウンドターミナル
+- **メインターミナル** -- ドラッグ・リサイズ可能なフローティングパネル（インタラクティブ操作用）
+- **エージェントペイン** -- 自律タスクを実行し、結果を報告するバックグラウンドターミナル
 
 すべてのペインは同じセッションコンテキストを共有するため、エージェントはオペレータが作成したファイルを読み取ることができ、その逆も可能です。
 
 ## 基本的な使い方
 
-<Tabs>
-  <TabItem label="Vue">
-  ```vue
-  <script setup>
-  import { AgiPilot } from "@working-with-agi/vue";
+```vue
+<script setup>
+import { AgiPilot } from "@work-with-ai/vue";
 
-  const apiKey = import.meta.env.VITE_AGI_KEY;
-  </script>
+const endpoint = "https://api.workwithagi.dev";
+const apiKey = import.meta.env.VITE_AGI_KEY;
+const sessionId = "my-session-id";
+</script>
 
-  <template>
-    <AgiPilot
-      :api-key="apiKey"
-      theme="dark"
-      :agents="[
-        { role: 'reviewer', label: 'コードレビュー' },
-        { role: 'tester', label: 'テスト実行' },
-      ]"
-    />
-  </template>
-  ```
-  </TabItem>
-  <TabItem label="React">
-  ```tsx
-  import { AgiPilot } from "@working-with-agi/react";
+<template>
+  <AgiPilot
+    :endpoint="endpoint"
+    :api-key="apiKey"
+    :session-id="sessionId"
+    theme="dark"
+    :font-size="14"
+    :float-x="80"
+    :float-y="60"
+    :float-width="720"
+    :float-height="480"
+    @connect="console.log('Main terminal connected')"
+    @disconnect="console.log('Main terminal disconnected')"
+    @pane-added="(paneId, role) => console.log('Pane added:', paneId, role)"
+    @pane-removed="(paneId) => console.log('Pane removed:', paneId)"
+  />
+</template>
+```
 
-  export default function Workspace() {
-    return (
-      <AgiPilot
-        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
-        theme="dark"
-        agents={[
-          { role: "reviewer", label: "コードレビュー" },
-          { role: "tester", label: "テスト実行" },
-        ]}
-      />
-    );
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vanilla JS">
-  ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
+### Props
 
-  const pilot = WorkAGI.pilot("#workspace", {
-    apiKey: "your-api-key",
-    theme: "dark",
-    agents: [
-      { role: "reviewer", label: "コードレビュー" },
-      { role: "tester", label: "テスト実行" },
-    ],
-  });
-  ```
-  </TabItem>
-</Tabs>
+| Prop | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `endpoint` | `string` | **必須** | agiterm-server のベース URL |
+| `api-key` | `string` | `undefined` | 認証用 API キー |
+| `session-id` | `string` | `undefined` | メインセッション ID（ユーザーインタラクティブターミナル） |
+| `theme` | `"dark" \| "light" \| TerminalTheme` | `"dark"` | テーマプリセットまたはカスタムテーマオブジェクト |
+| `font-size` | `number` | `14` | ターミナルのフォントサイズ（ピクセル） |
+| `float-x` | `number` | `80` | フローティングウィンドウの初期 X 位置 |
+| `float-y` | `number` | `60` | フローティングウィンドウの初期 Y 位置 |
+| `float-width` | `number` | `720` | フローティングウィンドウの初期幅 |
+| `float-height` | `number` | `480` | フローティングウィンドウの初期高さ |
 
-## API によるエージェントの追加
+## API によるペイン管理
 
-`AgiApiClient` を使って、実行時にエージェントペインを動的に追加・削除できます。
+コア SDK の `AgiApiClient` を使用して、実行時にエージェントペインを動的に追加・削除できます:
 
 ```typescript
-import { AgiApiClient } from "@working-with-agi/sdk";
+import { AgiApiClient } from "@work-with-ai/sdk";
 
-const client = new AgiApiClient({
-  apiKey: "your-api-key",
-  endpoint: "https://api.workwithagi.dev",
+const client = new AgiApiClient(
+  "https://api.workwithagi.dev",
+  "your-api-key",
+);
+
+// 既存セッションにエージェントペインを追加
+const pane = await client.addPane("session-id", {
+  role: "reviewer",
+  tool: "claude-code",
+  cols: 120,
+  rows: 40,
 });
+console.log("Pane ID:", pane.pane_id);
+// pane には pane.tool, pane.role, pane.title も含まれます
 
-// 既存の Pilot セッションにエージェントを追加
-const agent = await client.agents.create({
-  sessionId: "pilot-session-id",
-  role: "architect",
-  label: "アーキテクチャアドバイザー",
-  model: "claude-sonnet-4-6",
-  tools: ["read_file", "search_code", "write_file"],
-  systemPrompt: "あなたはソフトウェアアーキテクトです。改善点を提案してください。",
-});
+// 現在のレイアウトツリーを取得
+const layout = await client.getLayout("session-id");
 
-console.log("Agent ID:", agent.id);
-
-// エージェントにタスクを送信
-await client.agents.run(agent.id, {
-  task: "認証モジュールをレビューし、リファクタリングの機会を提案してください",
-  target: "src/auth/",
-});
-
-// 完了後にエージェントを削除
-await client.agents.destroy(agent.id);
+// 完了後にペインを削除
+await client.removePane("session-id", pane.pane_id);
 ```
 
 <Aside type="note">
   各エージェントペインは同時セッション枠を 1 つ消費します。プランの上限は[料金プラン](/ja/pricing/)ページでご確認ください。
 </Aside>
 
-## エージェントロール
+### AddPaneParams
 
-ビルトインロールは、一般的なワークフロー向けに適切なデフォルト設定を提供します。
-
-| ロール | デフォルトツール | 説明 |
+| フィールド | 型 | 説明 |
 |---|---|---|
-| `reviewer` | `read_file`, `search_code` | コードをレビューし、結果を報告 |
-| `tester` | `read_file`, `run_tests`, `write_file` | テストを実行し、新しいテストケースを作成 |
-| `architect` | `read_file`, `search_code` | 構造を分析し、改善を提案 |
-| `developer` | `read_file`, `write_file`, `run_command` | 指示に基づいて変更を実装 |
+| `tool` | `string?` | ペインで実行する AI CLI ツール |
+| `role` | `string?` | エージェントロール（例: `"reviewer"`, `"tester"`, `"architect"`, `"developer"`） |
+| `cols` | `number?` | ターミナルのカラム数 |
+| `rows` | `number?` | ターミナルの行数 |
 
-どのロールでもデフォルトのツールとシステムプロンプトをオーバーライドできます。
+## Pinia ストアによるプログラム制御
+
+`AgiPilot` をフルワークスペースアプリケーション内で使用する場合、`@work-with-ai/vue` からエクスポートされた Pinia ストアを使用してきめ細かい制御が可能です。
+
+### useTmuxStore
+
+WebSocket 経由でセッション、ウィンドウ、ペインの状態を管理します:
+
+```vue
+<script setup>
+import { useTmuxStore } from "@work-with-ai/vue";
+
+const tmux = useTmuxStore();
+
+// セッションに接続
+tmux.connect("my-session-id");
+
+// ペイン操作
+tmux.splitPane("v");           // アクティブペインを垂直分割
+tmux.splitPane("h", "pane-3"); // 指定ペインを水平分割
+tmux.closePane("pane-3");
+tmux.focusPane("pane-2");
+tmux.sendPaneInput("pane-1", "ls -la\n");
+tmux.resizePanePty("pane-1", 120, 40);
+tmux.toggleZoom("pane-1");     // ペインのズームを切り替え
+
+// ウィンドウ操作
+tmux.createWindow("build");
+tmux.selectWindow("window-2");
+tmux.closeWindow("window-1");
+
+// レイアウトプリセット
+tmux.applyPresetLayout("main-vertical");
+
+// エージェントメッセージング
+tmux.sendAgentDM("agent-1", "Please review src/auth.ts", "Review request");
+tmux.sendAgentBroadcast("Build completed successfully", "Build done");
+
+// 切断
+tmux.disconnect();
+</script>
+```
+
+**主要なリアクティブステート:**
+
+| プロパティ | 型 | 説明 |
+|---|---|---|
+| `session` | `TmuxSessionState \| null` | 完全なセッション状態 |
+| `isConnected` | `boolean` | WebSocket 接続状態 |
+| `activeWindow` | `TmuxWindowState \| null` | 現在アクティブなウィンドウ |
+| `activePane` | `TmuxPaneState \| null` | 現在アクティブなペイン |
+| `windowList` | `TmuxWindowState[]` | インデックス順の全ウィンドウ |
+| `activePaneId` | `string` | アクティブなペイン ID |
+
+### useUIModeStore
+
+インタラクションモードとサイドバーを制御します:
+
+```vue
+<script setup>
+import { useUIModeStore } from "@work-with-ai/vue";
+
+const ui = useUIModeStore();
+
+// tmux モードとパイロットモードを切り替え
+ui.setInteractionMode("pilot");
+ui.toggleInteractionMode();
+
+// 現在のモードを確認
+console.log(ui.interactionMode); // "tmux" | "pilot"
+console.log(ui.isPilotMode);     // true
+console.log(ui.isTmuxMode);      // false
+
+// サイドバー制御（パイロットモードで利用可能）
+ui.setSidebarTab("agents");      // "chat" | "agents" | "tasks" | "timeline"
+ui.toggleSidebar();
+ui.setSidebarWidth(400);         // 240-480 にクランプ
+</script>
+```
+
+### useAgentTaskStore
+
+REST API 経由でエージェント間の共有タスクを管理します:
+
+```vue
+<script setup>
+import { useAgentTaskStore } from "@work-with-ai/vue";
+
+const tasks = useAgentTaskStore();
+
+// セッションで初期化
+await tasks.fetchTasks("session-id");
+
+// タスクの CRUD
+const task = await tasks.createTask("Fix auth bug", "Token refresh fails after 1h");
+await tasks.updateTask(task.task_id, { status: "in_progress" });
+await tasks.claimTask(task.task_id, "agent-1");
+await tasks.deleteTask(task.task_id);
+
+// リアクティブゲッター
+console.log(tasks.taskList);        // 全タスク
+console.log(tasks.pendingTasks);    // status === "pending"
+console.log(tasks.inProgressTasks); // status === "in_progress"
+console.log(tasks.completedTasks);  // status === "completed"
+</script>
+```
+
+### useAgentMessagingStore
+
+エージェント間メッセージ、エージェントステータス、未読カウントを追跡します:
+
+```vue
+<script setup>
+import { useAgentMessagingStore } from "@work-with-ai/vue";
+
+const messaging = useAgentMessagingStore();
+
+// 特定のペイン/エージェントのメッセージを取得
+const msgs = messaging.messagesForPane("pane-1");
+
+// 未読バッジをクリア
+messaging.clearUnread("agent-1");
+
+// リアクティブステート
+console.log(messaging.totalUnread);  // 未読の合計数
+console.log(messaging.agentList);    // ステータス付きの全エージェント
+</script>
+```
 
 ## テーマのカスタマイズ
 
-パイロットモードは `AgiTerminal` と同じテーマに加え、レイアウト固有のオプションをサポートしています。
+`AgiPilot` は `TerminalTheme` オブジェクトまたはプリセット文字列（`"dark"` または `"light"`）を受け付けます。テーマは xterm.js のカラーフォーマットに従います:
 
 ```typescript
-const themeConfig = {
-  // ベースターミナルテーマ
-  theme: "dark", // "dark" | "light" | "system"
+import type { TerminalTheme } from "@work-with-ai/sdk";
 
-  // カスタムカラー
-  colors: {
-    background: "#1a1b26",
-    foreground: "#a9b1d6",
-    cursor: "#c0caf5",
-    selection: "#33467c",
-    accent: "#7aa2f7",
-  },
-
-  // Pilot レイアウトオプション
-  pilot: {
-    mainPosition: "bottom-right",  // "bottom-right" | "bottom-left" | "top-right" | "top-left"
-    mainWidth: 800,
-    mainHeight: 400,
-    agentPaneHeight: 200,
-    collapsedByDefault: true,      // エージェントペインを折りたたんだ状態で開始
-    showStatusBar: true,           // エージェントステータスインジケーターを表示
-  },
+const customTheme: TerminalTheme = {
+  background: "#1a1b26",
+  foreground: "#a9b1d6",
+  cursor: "#c0caf5",
+  selectionBackground: "#33467c",
+  black: "#15161e",
+  red: "#f7768e",
+  green: "#9ece6a",
+  yellow: "#e0af68",
+  blue: "#7aa2f7",
+  magenta: "#bb9af7",
+  cyan: "#7dcfff",
+  white: "#a9b1d6",
+  brightBlack: "#414868",
+  brightRed: "#f7768e",
+  brightGreen: "#9ece6a",
+  brightYellow: "#e0af68",
+  brightBlue: "#7aa2f7",
+  brightMagenta: "#bb9af7",
+  brightCyan: "#7dcfff",
+  brightWhite: "#c0caf5",
 };
 ```
 
-<Tabs>
-  <TabItem label="Vue">
-  ```vue
-  <template>
-    <AgiPilot
-      :api-key="apiKey"
-      :theme-config="themeConfig"
-      :agents="agents"
-    />
-  </template>
-  ```
-  </TabItem>
-  <TabItem label="React">
-  ```tsx
+```vue
+<template>
   <AgiPilot
-    apiKey={apiKey}
-    themeConfig={themeConfig}
-    agents={agents}
+    :endpoint="endpoint"
+    :api-key="apiKey"
+    :session-id="sessionId"
+    :theme="customTheme"
+    :font-size="14"
   />
-  ```
-  </TabItem>
-</Tabs>
+</template>
+```
 
 ## イベント
 
-パイロットモードは、メインターミナルとエージェントペインの両方からイベントを発行します。
+`AgiPilot` は以下のイベントを発行します:
 
 | イベント | ペイロード | 説明 |
 |---|---|---|
-| `command` | `{ pane: string, command: string }` | コマンドが実行された |
-| `agent:start` | `{ agentId: string, task: string }` | エージェントがタスクを開始した |
-| `agent:complete` | `{ agentId: string, result: object }` | エージェントがタスクを完了した |
-| `agent:error` | `{ agentId: string, error: string }` | エージェントがエラーに遭遇した |
-| `pane:resize` | `{ pane: string, width: number, height: number }` | ペインがリサイズされた |
+| `connect` | -- | メインターミナルの WebSocket が接続された |
+| `disconnect` | -- | メインターミナルの WebSocket が切断された |
+| `pane-added` | `(paneId: string, role?: string)` | バックグラウンドエージェントペインが追加された |
+| `pane-removed` | `(paneId: string)` | バックグラウンドエージェントペインが削除された |
+
+## 公開メソッド
+
+`AgiPilot` はテンプレート ref 経由でメソッドを公開します:
+
+```vue
+<script setup>
+import { ref } from "vue";
+import { AgiPilot } from "@work-with-ai/vue";
+
+const pilotRef = ref<InstanceType<typeof AgiPilot>>();
+
+// 接続状態を確認
+console.log(pilotRef.value?.connectionState); // "disconnected" | "connecting" | "connected"
+
+// レイアウトツリーにアクセス
+console.log(pilotRef.value?.layoutTree);
+
+// 強制再接続
+pilotRef.value?.reconnect();
+
+// 全ペインのターミナルをリフィット
+pilotRef.value?.fitAll();
+</script>
+
+<template>
+  <AgiPilot ref="pilotRef" :endpoint="endpoint" :session-id="sessionId" />
+</template>
+```
 
 ## 次のステップ
 
-- [SDK クイックスタート](/ja/sdk/quickstart/) — 基本的なセットアップとインストール
-- [ナレッジベース](/ja/sdk/knowledge/) — RAG のためのドキュメント・コード連携
-- [機能一覧](/ja/features/) — 全機能リファレンス
+- [SDK クイックスタート](/ja/sdk/quickstart/) -- 基本的なセットアップとインストール
+- [ナレッジベース](/ja/sdk/knowledge/) -- RAG のためのドキュメント・コード連携
+- [機能一覧](/ja/features/) -- 全機能リファレンス

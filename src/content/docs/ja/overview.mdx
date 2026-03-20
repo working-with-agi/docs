@@ -1,19 +1,11 @@
 ---
 title: WorkWithAGI とは
-description: AI ターミナルと KnowledgeHub をアプリに組み込む SDK — MAGI エージェント基盤
+description: AI ターミナルと KnowledgeHub をアプリに組み込む SDK
 ---
-
-## コンセプト: MAGI — Multi Agent General Instrument
-
-WorkWithAGI は **MAGI（Multi Agent General Instrument）** をコンセプトとしたSDKです。
-
-あなたのサービスにAI対話機能を組み込むことで、ユーザーがAIと対話しながら作業を進められるようになります。「これをやって」と指示するだけで、AIがデータの収集・分析・レポート作成まで一貫して自律的にこなします。
-
-チャットボットとは異なり、AIエージェントが**自律的にタスクを計画・実行**します。作業過程が見え、途中で方向修正もできます。
 
 ## 課題
 
-プロダクトに AI 搭載の開発者ツールを追加したい — AI アシスタント付きターミナルや、意図を理解するナレッジ検索。ゼロから構築すると数ヶ月かかり、PTY 処理、ベクトルデータベース、埋め込みモデル、リアルタイム WebSocket プロトコルの専門知識が必要です。
+プロダクトに AI 搭載の開発者ツールを追加したい — AI アシスタント付きターミナルや、意図を理解するインテリジェントなナレッジ検索。ゼロから構築すると数ヶ月かかり、PTY 処理、ベクトルデータベース、埋め込みモデル、リアルタイム WebSocket プロトコルの専門知識が必要です。
 
 ## 解決策
 
@@ -38,30 +30,28 @@ iframe または JavaScript SDK で埋め込み:
 
 ```typescript
 // SDK: フルコントロール
-import { WorkAGI } from "@working-with-agi/sdk";
+import { WorkAGI } from "@work-with-ai/sdk";
 
-const term = WorkAGI.terminal("#container", {
+const term = WorkAGI.terminal({
+  container: "#container",
+  endpoint: "https://your-server:8600",
   theme: "dark",
-  ai: true,
-  recording: true,
-  onThreat: (alert) => notify(alert),
+  onConnect: () => console.log("Connected"),
+  onDisconnect: () => console.log("Disconnected"),
 });
 ```
 
 ### KnowledgeHub
 
-ドキュメント、コード、Wiki をインデックスし、「何が必要か」を記述して検索:
+ドキュメント、コード、Wiki をインデックスし、正確な名前を覚えていなくても必要なものを記述して検索:
 
 ```typescript
-const hub = WorkAGI.knowledgeHub({
-  index: "my-project",
-});
+import { KnowledgeClient } from "@work-with-ai/sdk";
 
-// ディレクトリを取り込み
-await hub.ingest("./src");
+const kb = new KnowledgeClient("https://your-hub:8610", "your-api-key");
 
 // 意図で検索
-const results = await hub.search("API タイムアウトのエラーハンドリング");
+const results = await kb.search("error handling for API timeouts");
 // → ソース、セクション、関連度スコア、スニペット
 ```
 
@@ -78,7 +68,7 @@ const results = await hub.search("API タイムアウトのエラーハンドリ
   │
   ├── WorkAGI.terminal()       →  WebSocket (Socket.IO) → PTY + AI エージェント
   │
-  └── WorkAGI.knowledgeHub()   →  REST API → 埋め込み → ベクトル DB
+  └── KnowledgeClient          →  REST API → 埋め込み → ベクトル DB
 ```
 
 両コンポーネントともセルフホスト可能。マネージドサービスを選ばない限り、データはあなたのインフラの外に出ません。

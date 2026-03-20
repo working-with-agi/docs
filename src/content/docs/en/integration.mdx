@@ -23,41 +23,41 @@ The simplest way to embed the AI Terminal:
 For full control over the terminal lifecycle:
 
 ```typescript
-import { WorkAI } from "@aether-platform/workai-sdk";
+import { WorkAGI, AgiApiClient } from "@work-with-ai/sdk";
 
-const workai = new WorkAI({ apiKey: "...", tenant: "..." });
+// REST API client
+const api = WorkAGI.api("https://your-server:8600", "your-api-key");
+// or
+const api = new AgiApiClient("https://your-server:8600", "your-api-key");
 
-const terminal = workai.terminal.create({
+// Create session
+const session = await api.createSession({ user_id: "user-1", tool: "claude" });
+
+// Mount terminal
+const terminal = WorkAGI.terminal({
   container: document.getElementById("terminal"),
+  endpoint: "https://your-server:8600",
+  apiKey: "your-api-key",
+  sessionId: session.session_id,
   theme: "dark",
   fontSize: 14,
-  aiAssistant: true,
-  sessionRecording: true,
-  onCommand: (cmd) => console.log("Command:", cmd),
-  onThreat: (alert) => notifySecurityTeam(alert),
+  onConnect: () => console.log("Connected"),
+  onDisconnect: () => console.log("Disconnected"),
 });
 
-// Programmatic interaction
-await terminal.execute("ls -la");
 terminal.dispose();
 ```
 
 ## Agent System Integration
 
 ```typescript
-const agent = workai.agents.create({
+const pane = await api.addPane(session.session_id, {
+  tool: "claude",
   role: "reviewer",
-  model: "claude-sonnet-4-6",
-  tools: ["read_file", "search_code", "run_tests"],
 });
 
-const result = await agent.run({
-  task: "Review the authentication module for security issues",
-  target: "src/auth/",
-  output: "markdown",
-});
-
-console.log(result.findings);
+// Remove when done
+await api.removePane(session.session_id, pane.pane_id);
 ```
 
 ## MCP Server Setup
@@ -76,12 +76,8 @@ servers:
 ## KnowledgeHub Configuration
 
 ```typescript
-const hub = workai.knowledgeHub.configure({
-  chunkSize: 512,
-  watchPaths: ["src/", "docs/"],
-  excludePatterns: ["node_modules/", "*.min.js"],
-});
+import { KnowledgeClient } from "@work-with-ai/sdk";
 
-await hub.ingest();
-const results = await hub.search("error handling patterns");
+const kb = new KnowledgeClient("https://your-hub:8610", "your-api-key");
+const results = await kb.search("error handling patterns");
 ```

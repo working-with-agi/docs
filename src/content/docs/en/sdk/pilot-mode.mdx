@@ -3,194 +3,323 @@ title: Pilot Mode
 description: Floating AI terminal with background agent panes
 ---
 
-import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
 
 Pilot Mode provides a floating main terminal with collapsible background agent panes. It is designed for workflows where a human operator drives the primary terminal while AI agents work in parallel.
+
+<Aside type="note">
+  `AgiPilot` is only available in the Vue package (`@work-with-ai/vue`). React and Angular do not include this component.
+</Aside>
 
 ## Overview
 
 The `AgiPilot` component renders:
 
-- **Main terminal** — a draggable, resizable floating panel for interactive use
-- **Agent panes** — background terminals that run autonomous tasks and report results
+- **Main terminal** -- a draggable, resizable floating panel for interactive use
+- **Agent panes** -- background terminals that run autonomous tasks and report results
 
 All panes share the same session context, so agents can read files the operator creates and vice versa.
 
 ## Basic Usage
 
-<Tabs>
-  <TabItem label="Vue">
-  ```vue
-  <script setup>
-  import { AgiPilot } from "@working-with-agi/vue";
+```vue
+<script setup>
+import { AgiPilot } from "@work-with-ai/vue";
 
-  const apiKey = import.meta.env.VITE_AGI_KEY;
-  </script>
+const endpoint = "https://api.workwithagi.dev";
+const apiKey = import.meta.env.VITE_AGI_KEY;
+const sessionId = "my-session-id";
+</script>
 
-  <template>
-    <AgiPilot
-      :api-key="apiKey"
-      theme="dark"
-      :agents="[
-        { role: 'reviewer', label: 'Code Review' },
-        { role: 'tester', label: 'Test Runner' },
-      ]"
-    />
-  </template>
-  ```
-  </TabItem>
-  <TabItem label="React">
-  ```tsx
-  import { AgiPilot } from "@working-with-agi/react";
+<template>
+  <AgiPilot
+    :endpoint="endpoint"
+    :api-key="apiKey"
+    :session-id="sessionId"
+    theme="dark"
+    :font-size="14"
+    :float-x="80"
+    :float-y="60"
+    :float-width="720"
+    :float-height="480"
+    @connect="console.log('Main terminal connected')"
+    @disconnect="console.log('Main terminal disconnected')"
+    @pane-added="(paneId, role) => console.log('Pane added:', paneId, role)"
+    @pane-removed="(paneId) => console.log('Pane removed:', paneId)"
+  />
+</template>
+```
 
-  export default function Workspace() {
-    return (
-      <AgiPilot
-        apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
-        theme="dark"
-        agents={[
-          { role: "reviewer", label: "Code Review" },
-          { role: "tester", label: "Test Runner" },
-        ]}
-      />
-    );
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vanilla JS">
-  ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
+### Props
 
-  const pilot = WorkAGI.pilot("#workspace", {
-    apiKey: "your-api-key",
-    theme: "dark",
-    agents: [
-      { role: "reviewer", label: "Code Review" },
-      { role: "tester", label: "Test Runner" },
-    ],
-  });
-  ```
-  </TabItem>
-</Tabs>
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `endpoint` | `string` | **required** | agiterm-server base URL |
+| `api-key` | `string` | `undefined` | API key for authentication |
+| `session-id` | `string` | `undefined` | Main session ID (user-interactive terminal) |
+| `theme` | `"dark" \| "light" \| TerminalTheme` | `"dark"` | Theme preset or custom theme object |
+| `font-size` | `number` | `14` | Terminal font size in pixels |
+| `float-x` | `number` | `80` | Initial float window X position |
+| `float-y` | `number` | `60` | Initial float window Y position |
+| `float-width` | `number` | `720` | Initial float window width |
+| `float-height` | `number` | `480` | Initial float window height |
 
-## Adding Agents via API
+## Managing Panes via API
 
-You can dynamically add or remove agent panes at runtime through the `AgiApiClient`:
+Use `AgiApiClient` from the core SDK to dynamically add or remove agent panes at runtime:
 
 ```typescript
-import { AgiApiClient } from "@working-with-agi/sdk";
+import { AgiApiClient } from "@work-with-ai/sdk";
 
-const client = new AgiApiClient({
-  apiKey: "your-api-key",
-  endpoint: "https://api.workwithagi.dev",
+const client = new AgiApiClient(
+  "https://api.workwithagi.dev",
+  "your-api-key",
+);
+
+// Add an agent pane to an existing session
+const pane = await client.addPane("session-id", {
+  role: "reviewer",
+  tool: "claude-code",
+  cols: 120,
+  rows: 40,
 });
+console.log("Pane ID:", pane.pane_id);
+// pane also includes: pane.tool, pane.role, pane.title
 
-// Add an agent to an existing Pilot session
-const agent = await client.agents.create({
-  sessionId: "pilot-session-id",
-  role: "architect",
-  label: "Architecture Advisor",
-  model: "claude-sonnet-4-6",
-  tools: ["read_file", "search_code", "write_file"],
-  systemPrompt: "You are a software architect. Suggest improvements.",
-});
+// Get the current layout tree
+const layout = await client.getLayout("session-id");
 
-console.log("Agent ID:", agent.id);
-
-// Send a task to the agent
-await client.agents.run(agent.id, {
-  task: "Review the authentication module and suggest refactoring opportunities",
-  target: "src/auth/",
-});
-
-// Remove the agent when done
-await client.agents.destroy(agent.id);
+// Remove a pane when done
+await client.removePane("session-id", pane.pane_id);
 ```
 
 <Aside type="note">
   Each agent pane consumes one concurrent session slot. Check your plan's limits on the [Pricing](/en/pricing/) page.
 </Aside>
 
-## Agent Roles
+### AddPaneParams
 
-Built-in roles provide sensible defaults for common workflows:
-
-| Role | Default Tools | Description |
+| Field | Type | Description |
 |---|---|---|
-| `reviewer` | `read_file`, `search_code` | Reviews code and reports findings |
-| `tester` | `read_file`, `run_tests`, `write_file` | Runs tests and writes new test cases |
-| `architect` | `read_file`, `search_code` | Analyzes structure and suggests improvements |
-| `developer` | `read_file`, `write_file`, `run_command` | Implements changes based on instructions |
+| `tool` | `string?` | AI CLI tool to run in the pane |
+| `role` | `string?` | Agent role (e.g., `"reviewer"`, `"tester"`, `"architect"`, `"developer"`) |
+| `cols` | `number?` | Terminal column count |
+| `rows` | `number?` | Terminal row count |
 
-You can override the default tools and system prompt for any role.
+## Programmatic Control with Pinia Stores
+
+When `AgiPilot` is used inside a full workspace application, you can use the Pinia stores exported from `@work-with-ai/vue` for fine-grained control.
+
+### useTmuxStore
+
+Manages session, window, and pane state over WebSocket:
+
+```vue
+<script setup>
+import { useTmuxStore } from "@work-with-ai/vue";
+
+const tmux = useTmuxStore();
+
+// Connect to a session
+tmux.connect("my-session-id");
+
+// Pane operations
+tmux.splitPane("v");           // vertical split on active pane
+tmux.splitPane("h", "pane-3"); // horizontal split on specific pane
+tmux.closePane("pane-3");
+tmux.focusPane("pane-2");
+tmux.sendPaneInput("pane-1", "ls -la\n");
+tmux.resizePanePty("pane-1", 120, 40);
+tmux.toggleZoom("pane-1");     // toggle pane zoom
+
+// Window operations
+tmux.createWindow("build");
+tmux.selectWindow("window-2");
+tmux.closeWindow("window-1");
+
+// Layout presets
+tmux.applyPresetLayout("main-vertical");
+
+// Agent messaging
+tmux.sendAgentDM("agent-1", "Please review src/auth.ts", "Review request");
+tmux.sendAgentBroadcast("Build completed successfully", "Build done");
+
+// Disconnect
+tmux.disconnect();
+</script>
+```
+
+**Key reactive state:**
+
+| Property | Type | Description |
+|---|---|---|
+| `session` | `TmuxSessionState \| null` | Full session state |
+| `isConnected` | `boolean` | WebSocket connection status |
+| `activeWindow` | `TmuxWindowState \| null` | Currently active window |
+| `activePane` | `TmuxPaneState \| null` | Currently active pane |
+| `windowList` | `TmuxWindowState[]` | All windows sorted by index |
+| `activePaneId` | `string` | Active pane ID |
+
+### useUIModeStore
+
+Controls the interaction mode and sidebar:
+
+```vue
+<script setup>
+import { useUIModeStore } from "@work-with-ai/vue";
+
+const ui = useUIModeStore();
+
+// Switch between tmux and pilot modes
+ui.setInteractionMode("pilot");
+ui.toggleInteractionMode();
+
+// Check current mode
+console.log(ui.interactionMode); // "tmux" | "pilot"
+console.log(ui.isPilotMode);     // true
+console.log(ui.isTmuxMode);      // false
+
+// Sidebar control (available in pilot mode)
+ui.setSidebarTab("agents");      // "chat" | "agents" | "tasks" | "timeline"
+ui.toggleSidebar();
+ui.setSidebarWidth(400);         // clamped to 240-480
+</script>
+```
+
+### useAgentTaskStore
+
+Manages shared tasks between agents via REST API:
+
+```vue
+<script setup>
+import { useAgentTaskStore } from "@work-with-ai/vue";
+
+const tasks = useAgentTaskStore();
+
+// Initialize with session
+await tasks.fetchTasks("session-id");
+
+// Task CRUD
+const task = await tasks.createTask("Fix auth bug", "Token refresh fails after 1h");
+await tasks.updateTask(task.task_id, { status: "in_progress" });
+await tasks.claimTask(task.task_id, "agent-1");
+await tasks.deleteTask(task.task_id);
+
+// Reactive getters
+console.log(tasks.taskList);        // all tasks
+console.log(tasks.pendingTasks);    // status === "pending"
+console.log(tasks.inProgressTasks); // status === "in_progress"
+console.log(tasks.completedTasks);  // status === "completed"
+</script>
+```
+
+### useAgentMessagingStore
+
+Tracks inter-agent messages, agent status, and unread counts:
+
+```vue
+<script setup>
+import { useAgentMessagingStore } from "@work-with-ai/vue";
+
+const messaging = useAgentMessagingStore();
+
+// Read messages for a specific pane/agent
+const msgs = messaging.messagesForPane("pane-1");
+
+// Clear unread badge
+messaging.clearUnread("agent-1");
+
+// Reactive state
+console.log(messaging.totalUnread);  // total unread count
+console.log(messaging.agentList);    // all known agents with status
+</script>
+```
 
 ## Theme Customization
 
-Pilot Mode supports the same themes as `AgiTerminal`, plus layout-specific options:
+`AgiPilot` accepts a `TerminalTheme` object or a preset string (`"dark"` or `"light"`). The theme follows the xterm.js color format:
 
 ```typescript
-const themeConfig = {
-  // Base terminal theme
-  theme: "dark", // "dark" | "light" | "system"
+import type { TerminalTheme } from "@work-with-ai/sdk";
 
-  // Custom color overrides
-  colors: {
-    background: "#1a1b26",
-    foreground: "#a9b1d6",
-    cursor: "#c0caf5",
-    selection: "#33467c",
-    accent: "#7aa2f7",
-  },
-
-  // Pilot layout options
-  pilot: {
-    mainPosition: "bottom-right",  // "bottom-right" | "bottom-left" | "top-right" | "top-left"
-    mainWidth: 800,
-    mainHeight: 400,
-    agentPaneHeight: 200,
-    collapsedByDefault: true,      // Start agent panes collapsed
-    showStatusBar: true,           // Show agent status indicators
-  },
+const customTheme: TerminalTheme = {
+  background: "#1a1b26",
+  foreground: "#a9b1d6",
+  cursor: "#c0caf5",
+  selectionBackground: "#33467c",
+  black: "#15161e",
+  red: "#f7768e",
+  green: "#9ece6a",
+  yellow: "#e0af68",
+  blue: "#7aa2f7",
+  magenta: "#bb9af7",
+  cyan: "#7dcfff",
+  white: "#a9b1d6",
+  brightBlack: "#414868",
+  brightRed: "#f7768e",
+  brightGreen: "#9ece6a",
+  brightYellow: "#e0af68",
+  brightBlue: "#7aa2f7",
+  brightMagenta: "#bb9af7",
+  brightCyan: "#7dcfff",
+  brightWhite: "#c0caf5",
 };
 ```
 
-<Tabs>
-  <TabItem label="Vue">
-  ```vue
-  <template>
-    <AgiPilot
-      :api-key="apiKey"
-      :theme-config="themeConfig"
-      :agents="agents"
-    />
-  </template>
-  ```
-  </TabItem>
-  <TabItem label="React">
-  ```tsx
+```vue
+<template>
   <AgiPilot
-    apiKey={apiKey}
-    themeConfig={themeConfig}
-    agents={agents}
+    :endpoint="endpoint"
+    :api-key="apiKey"
+    :session-id="sessionId"
+    :theme="customTheme"
+    :font-size="14"
   />
-  ```
-  </TabItem>
-</Tabs>
+</template>
+```
 
 ## Events
 
-Pilot Mode emits events for both the main terminal and agent panes:
+`AgiPilot` emits the following events:
 
 | Event | Payload | Description |
 |---|---|---|
-| `command` | `{ pane: string, command: string }` | A command was executed |
-| `agent:start` | `{ agentId: string, task: string }` | An agent started a task |
-| `agent:complete` | `{ agentId: string, result: object }` | An agent finished a task |
-| `agent:error` | `{ agentId: string, error: string }` | An agent encountered an error |
-| `pane:resize` | `{ pane: string, width: number, height: number }` | A pane was resized |
+| `connect` | -- | Main terminal WebSocket connected |
+| `disconnect` | -- | Main terminal WebSocket disconnected |
+| `pane-added` | `(paneId: string, role?: string)` | A background agent pane was added |
+| `pane-removed` | `(paneId: string)` | A background agent pane was removed |
+
+## Exposed Methods
+
+`AgiPilot` exposes methods via template ref:
+
+```vue
+<script setup>
+import { ref } from "vue";
+import { AgiPilot } from "@work-with-ai/vue";
+
+const pilotRef = ref<InstanceType<typeof AgiPilot>>();
+
+// Check connection state
+console.log(pilotRef.value?.connectionState); // "disconnected" | "connecting" | "connected"
+
+// Access layout tree
+console.log(pilotRef.value?.layoutTree);
+
+// Force reconnect
+pilotRef.value?.reconnect();
+
+// Refit all pane terminals
+pilotRef.value?.fitAll();
+</script>
+
+<template>
+  <AgiPilot ref="pilotRef" :endpoint="endpoint" :session-id="sessionId" />
+</template>
+```
 
 ## Next Steps
 
-- [SDK Quick Start](/en/sdk/quickstart/) — Basic setup and installation
-- [Knowledge Base](/en/sdk/knowledge/) — Connect your documents and code for RAG
-- [Features](/en/features/) — Full feature reference
+- [SDK Quick Start](/en/sdk/quickstart/) -- Basic setup and installation
+- [Knowledge Base](/en/sdk/knowledge/) -- Connect your documents and code for RAG
+- [Features](/en/features/) -- Full feature reference

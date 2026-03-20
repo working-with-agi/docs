@@ -10,22 +10,22 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 <Tabs>
   <TabItem label="React">
   ```bash
-  npm install @working-with-agi/react
+  npm install @work-with-ai/react
   ```
   </TabItem>
   <TabItem label="Vue">
   ```bash
-  npm install @working-with-agi/vue
+  npm install @work-with-ai/vue
   ```
   </TabItem>
   <TabItem label="Angular">
   ```bash
-  npm install @working-with-agi/angular
+  npm install @work-with-ai/angular
   ```
   </TabItem>
   <TabItem label="Vanilla JS">
   ```bash
-  npm install @working-with-agi/sdk
+  npm install @work-with-ai/sdk
   ```
   </TabItem>
 </Tabs>
@@ -35,17 +35,17 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 <Tabs>
   <TabItem label="React">
   ```tsx
-  import { AgiTerminal } from "@working-with-agi/react";
+  import { AgiTerminal } from "@work-with-ai/react";
 
   export default function Terminal() {
     return (
       <AgiTerminal
+        endpoint="https://your-server:8600"
         apiKey={process.env.NEXT_PUBLIC_AGI_KEY}
         theme="dark"
-        ai
-        recording
-        onCommand={(cmd) => console.log("Command:", cmd)}
-        onThreat={(alert) => notifyAdmin(alert)}
+        onConnect={() => console.log("Connected")}
+        onDisconnect={() => console.log("Disconnected")}
+        onOutput={(data) => console.log("Output:", data)}
       />
     );
   }
@@ -54,17 +54,17 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Vue">
   ```vue
   <script setup>
-  import { AgiTerminal } from "@working-with-agi/vue";
+  import { AgiTerminal } from "@work-with-ai/vue";
   </script>
 
   <template>
     <AgiTerminal
-      :api-key="agiKey"
+      endpoint="https://your-server:8600"
+      :apiKey="agiKey"
       theme="dark"
-      ai
-      recording
-      @command="(cmd) => console.log('Command:', cmd)"
-      @threat="(alert) => notifyAdmin(alert)"
+      @connect="() => console.log('Connected')"
+      @disconnect="() => console.log('Disconnected')"
+      @output="(data) => console.log('Output:', data)"
     />
   </template>
   ```
@@ -72,39 +72,42 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
   <TabItem label="Angular">
   ```typescript
   import { Component } from "@angular/core";
-  import { AgiTerminalComponent } from "@working-with-agi/angular";
+  import { AgiTerminalComponent } from "@work-with-ai/angular";
 
   @Component({
     imports: [AgiTerminalComponent],
     template: `
       <agi-terminal
+        [endpoint]="endpoint"
         [apiKey]="apiKey"
         theme="dark"
-        [ai]="true"
-        [recording]="true"
-        (command)="onCommand($event)"
-        (threat)="onThreat($event)"
+        (connected)="onConnected()"
+        (disconnected)="onDisconnected()"
+        (output)="onOutput($event)"
       />
     `,
   })
   export class TerminalPage {
+    endpoint = "https://your-server:8600";
     apiKey = environment.agiKey;
-    onCommand(cmd: string) { console.log("Command:", cmd); }
-    onThreat(alert: any) { notifyAdmin(alert); }
+    onConnected() { console.log("Connected"); }
+    onDisconnected() { console.log("Disconnected"); }
+    onOutput(data: any) { console.log("Output:", data); }
   }
   ```
   </TabItem>
   <TabItem label="Vanilla JS">
   ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
+  import { WorkAGI } from "@work-with-ai/sdk";
 
-  const terminal = WorkAGI.terminal("#terminal", {
+  const terminal = WorkAGI.terminal({
+    container: "#terminal",
+    endpoint: "https://your-server:8600",
     apiKey: "your-api-key",
     theme: "dark",
-    ai: true,
-    recording: true,
-    onCommand: (cmd) => console.log("Command:", cmd),
-    onThreat: (alert) => notifyAdmin(alert),
+    onConnect: () => console.log("Connected"),
+    onDisconnect: () => console.log("Disconnected"),
+    onOutput: (data) => console.log("Output:", data),
   });
 
   // Programmatic control
@@ -116,86 +119,13 @@ import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
 ## KnowledgeHub
 
-<Tabs>
-  <TabItem label="React">
-  ```tsx
-  import { useKnowledgeHub } from "@working-with-agi/react";
+```typescript
+import { KnowledgeClient } from "@work-with-ai/sdk";
 
-  export default function Search() {
-    const { search, results, loading } = useKnowledgeHub({
-      apiKey: process.env.NEXT_PUBLIC_AGI_KEY,
-      index: "my-project",
-    });
-
-    return (
-      <div>
-        <input onChange={(e) => search(e.target.value)} placeholder="Search knowledge..." />
-        {results.map((hit) => (
-          <div key={hit.source + hit.section}>
-            <code>{hit.source}:{hit.section}</code> — {hit.snippet}
-          </div>
-        ))}
-      </div>
-    );
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vue">
-  ```vue
-  <script setup>
-  import { useKnowledgeHub } from "@working-with-agi/vue";
-
-  const { search, results, loading } = useKnowledgeHub({
-    apiKey: agiKey,
-    index: "my-project",
-  });
-  </script>
-
-  <template>
-    <input @input="search($event.target.value)" placeholder="Search knowledge..." />
-    <div v-for="hit in results" :key="hit.source + hit.section">
-      <code>{{ hit.source }}:{{ hit.section }}</code> — {{ hit.snippet }}
-    </div>
-  </template>
-  ```
-  </TabItem>
-  <TabItem label="Angular">
-  ```typescript
-  import { Component } from "@angular/core";
-  import { KnowledgeHubService } from "@working-with-agi/angular";
-
-  @Component({
-    template: `
-      <input (input)="onSearch($event)" placeholder="Search knowledge..." />
-      <div *ngFor="let hit of results">
-        <code>{{ hit.source }}:{{ hit.section }}</code> — {{ hit.snippet }}
-      </div>
-    `,
-  })
-  export class SearchPage {
-    results: any[] = [];
-    constructor(private knowledgeHub: KnowledgeHubService) {}
-    async onSearch(event: Event) {
-      const query = (event.target as HTMLInputElement).value;
-      this.results = await this.knowledgeHub.search(query);
-    }
-  }
-  ```
-  </TabItem>
-  <TabItem label="Vanilla JS">
-  ```typescript
-  import { WorkAGI } from "@working-with-agi/sdk";
-
-  const hub = WorkAGI.knowledgeHub({
-    apiKey: "your-api-key",
-    index: "my-project",
-  });
-
-  const results = await hub.search("error handling for API timeouts");
-  // → [{ source, section, score, snippet }]
-  ```
-  </TabItem>
-</Tabs>
+const kb = new KnowledgeClient("https://your-hub:8610", "your-api-key");
+const results = await kb.search("error handling for API timeouts");
+// → [{ source, section, score, snippet }]
+```
 
 ## Self-Hosted Setup
 

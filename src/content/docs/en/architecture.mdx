@@ -45,6 +45,11 @@ Work with AI is built on **Aether Platform**. **AGI Terminal** runs on Kubernete
 │  └──────────────────┘                                    │
 │                                                         │
 │  ┌──────────────────────────────────────────────────────┐│
+│  │            Security Layer                            ││
+│  │  Sandbox isolation · Credential mgmt · Audit logs    ││
+│  └──────────────────────────────────────────────────────┘│
+│                                                         │
+│  ┌──────────────────────────────────────────────────────┐│
 │  │            Kubernetes Infrastructure                 ││
 │  │  Multi-tenant isolation · Auto-scaling · Resources   ││
 │  └──────────────────────────────────────────────────────┘│
@@ -115,6 +120,43 @@ AGI Terminal scales on Kubernetes.
 - **Multi-tenant isolation** — Per-tenant resource limits and network isolation
 - **Auto-scaling** — AGI Terminal pods scale on demand
 - **NATS** — Internal only (not exposed to internet)
+
+## Security
+
+### Container Sandbox Isolation
+
+Each AGI Terminal session runs in a dedicated container sandbox. This provides strong isolation between sessions and tenants.
+
+**Isolation boundaries:**
+- **Filesystem isolation** — Each session has its own filesystem. Files created in one session are not visible to others
+- **Network isolation** — Network policies restrict inter-session communication. Sessions can only reach the internet and approved internal services
+- **Resource limits** — CPU, memory, and storage quotas are enforced per session via Kubernetes resource limits
+- **Process isolation** — Each container runs as a non-root user with minimal capabilities (no `CAP_SYS_ADMIN`, no `CAP_NET_RAW`)
+
+**Session lifecycle security:**
+1. Container is created from a hardened base image with minimal attack surface
+2. Credentials are injected as files with `0600` permissions, readable only by the session user
+3. Session termination triggers secure cleanup — credentials are wiped, container is destroyed
+
+**Runtime security:**
+- **Read-only root filesystem** — Only designated writable paths (`/workspace`, `/tmp`) are writable
+- **No privilege escalation** — `allowPrivilegeEscalation: false` in the security context
+- **Seccomp profile** — Default or custom seccomp profiles restrict system calls
+- **Network policies** — Kubernetes NetworkPolicy controls egress (no lateral movement between sessions)
+
+### Credential Management
+
+Credentials for external services (API keys, tokens) are never embedded in the container image. They are:
+1. Stored in Vault (or Kubernetes Secrets for simpler deployments)
+2. Injected at session start into `.agiterm/credentials/` with `0600` permissions
+3. Scoped to the session — each session gets only the credentials it needs
+4. Automatically revoked/cleaned up on session termination
+
+### Audit & Compliance
+
+- All terminal I/O can be recorded for compliance and forensic analysis
+- Session recordings are stored encrypted and are tamper-evident
+- API access is logged with tenant, user, session, and timestamp
 
 ## Services on Aether Platform
 

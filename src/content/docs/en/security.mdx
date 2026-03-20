@@ -1,0 +1,309 @@
+---
+title: Security
+description: Security architecture — container sandbox isolation, credential management, and compliance
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+## Overview
+
+Work with AI is built with a **security-first architecture**. Every design decision — from container orchestration to credential handling — prioritizes isolation, least privilege, and defense in depth.
+
+**Core principles:**
+- **Isolation by default** — Every session runs in its own container with no shared state
+- **Least privilege** — Containers run as non-root with minimal Linux capabilities
+- **Zero trust** — All inter-service communication is authenticated and encrypted
+- **Ephemeral by design** — Sessions leave no persistent data unless explicitly configured
+- **Defense in depth** — Multiple overlapping security controls at every layer
+
+<Aside type="tip">
+For a high-level view of how security fits into the overall system, see the [Architecture](/en/architecture/#security) page.
+</Aside>
+
+## Container Sandbox
+
+Each AGI Terminal session runs in a dedicated, ephemeral container sandbox. The container is created on demand and destroyed when the session ends.
+
+### Base Image Hardening
+
+The base image is built with minimal attack surface:
+- Derived from a minimal base (distroless or slim variants)
+- No package manager in the final image — dependencies are installed at build time only
+- No SUID/SGID binaries
+- Image is scanned for CVEs in CI/CD before deployment
+- Images are signed and verified at deployment time
+
+### Pod Security Context
+
+Every session pod runs with a restrictive security context:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+    add: []
+  seccompProfile:
+    type: RuntimeDefault
+```
+
+- **`runAsNonRoot: true`** — The container is rejected if it attempts to run as root
+- **`readOnlyRootFilesystem: true`** — Only explicitly mounted writable volumes (`/workspace`, `/tmp`) can be written to
+- **`drop: ALL`** — All Linux capabilities are dropped. No `CAP_SYS_ADMIN`, `CAP_NET_RAW`, `CAP_SYS_PTRACE`, or any other capability
+- **`allowPrivilegeEscalation: false`** — Processes cannot gain more privileges than their parent
+- **Seccomp profile** — The default runtime seccomp profile restricts dangerous system calls (`mount`, `ptrace`, `reboot`, etc.)
+
+### Resource Quotas per Session
+
+Each session container has strict resource limits:
+
+| Resource | Default Limit | Description |
+|----------|---------------|-------------|
+| CPU | 2 cores | Prevents CPU starvation of other sessions |
+| Memory | 4 Gi | OOM-killed if exceeded |
+| Ephemeral storage | 10 Gi | Prevents disk exhaustion on the node |
+| PIDs | 256 | Limits fork bombs and runaway processes |
+
+Limits are configurable per tenant and plan tier.
+
+### Ephemeral Containers
+
+Sessions are ephemeral by default:
+- No persistent volumes are attached unless explicitly requested
+- Container filesystem is destroyed on session termination
+- Workspace data exists only for the duration of the session
+- No state leaks between sessions, even for the same user
+
+## Network Isolation
+
+### Kubernetes NetworkPolicy
+
+Network policies enforce strict traffic control at the pod level:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: session-isolation
+spec:
+  podSelector:
+    matchLabels:
+      app: agiterm-session
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: agiterm-gateway
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: nats
+      ports:
+        - port: 4222
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app: qdrant
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+```
+
+### No Inter-Session Communication
+
+Session pods cannot communicate with each other. NetworkPolicy rules explicitly deny pod-to-pod traffic between sessions. Each session can only communicate with:
+- The AGI Terminal gateway (for WebSocket traffic)
+- NATS (for MAGI Engine deliberation)
+- Qdrant (for Knowledge Hub queries)
+- The public internet (HTTPS only, via egress allowlist)
+
+### Egress Control
+
+Outbound internet access is restricted:
+- Only HTTPS (port 443) is allowed by default
+- Private IP ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) are blocked to prevent lateral movement within the cluster
+- Additional egress restrictions can be configured per tenant
+
+### NATS is Internal-Only
+
+The NATS messaging system used by the MAGI Engine is never exposed to the public internet. It runs on a cluster-internal service and is only reachable from session pods and platform components within the cluster.
+
+## Credential Management
+
+### Vault Integration
+
+Credentials for external services are managed through HashiCorp Vault:
+- Secrets are stored in Vault's KV v2 secret engine
+- Access is controlled by Vault policies scoped to tenant and session
+- Vault Agent or CSI driver injects secrets into the pod at startup
+- Dynamic secrets (short-lived tokens) are preferred over static credentials
+
+<Aside type="caution">
+Credentials are never embedded in container images or stored in environment variables. They are always injected as files with restricted permissions.
+</Aside>
+
+For simpler deployments, Kubernetes Secrets can be used as an alternative, but Vault is recommended for production.
+
+### Per-Session Credential Injection
+
+At session start, credentials are injected into the container filesystem:
+
+```
+{workspace}/.agiterm/credentials/
+├── token       (0600, owned by session user)
+├── api_url     (0600, owned by session user)
+└── api_key     (0600, owned by session user)
+```
+
+- File permissions are set to `0600` — readable only by the session user (UID 1000)
+- Credentials are mounted from a tmpfs volume (in-memory, never written to disk on the node)
+- Each session receives only the credentials required for its configured skills
+
+### Automatic Cleanup on Session Termination
+
+When a session ends:
+1. The tmpfs volume containing credentials is unmounted and freed from memory
+2. If dynamic secrets were used, they are revoked in Vault
+3. The container is terminated and its filesystem is destroyed
+4. No credential material persists after session end
+
+## Multi-Tenant Isolation
+
+### Tenant-Scoped API Keys
+
+Each tenant is issued unique API keys for platform access. API keys are:
+- Scoped to a single tenant — cannot access other tenants' data or sessions
+- Rotatable without downtime
+- Rate-limited per tenant and per key
+
+### Per-Tenant Qdrant Instances
+
+Each tenant gets a dedicated Qdrant vector database instance:
+- Instance name: `qdrant-{tenant_id}` in namespace `qdrant-{tenant_id}`
+- No shared collections or data between tenants
+- Provisioned automatically on tenant onboarding
+- Destroyed on tenant offboarding (with configurable data retention)
+
+### Resource Limits per Tenant
+
+Tenant-level resource quotas prevent any single tenant from monopolizing cluster resources:
+
+| Resource | Scope | Enforcement |
+|----------|-------|-------------|
+| Concurrent sessions | Per tenant | API gateway |
+| CPU / Memory | Per tenant namespace | Kubernetes ResourceQuota |
+| Storage | Per tenant | Kubernetes ResourceQuota |
+| API requests | Per tenant | Rate limiting at gateway |
+
+### Network Namespace Isolation
+
+Tenants are isolated at the Kubernetes namespace level:
+- Each tenant's sessions run in a dedicated namespace
+- NetworkPolicy prevents cross-namespace traffic
+- RBAC restricts access to namespace-scoped resources
+
+## Session Recording & Audit
+
+### Terminal I/O Recording
+
+All terminal input and output can be recorded for compliance and forensic analysis:
+- Recording is opt-in per tenant or per session
+- Raw PTY I/O is captured, preserving the exact session experience
+- Recordings include timestamps for every byte, enabling faithful replay
+
+### Encrypted Storage
+
+Session recordings are stored with strong encryption:
+- Encrypted at rest using AES-256-GCM
+- Encryption keys are managed by Vault or a KMS
+- Recordings are tamper-evident — any modification is detectable via HMAC verification
+- Access to recordings requires explicit authorization and is itself audited
+
+### API Audit Logs
+
+All API access is logged with structured audit entries:
+- **Tenant ID** — Which tenant made the request
+- **User ID** — Which user within the tenant
+- **Session ID** — Which session was affected
+- **Timestamp** — When the action occurred
+- **Action** — What was requested (create session, inject skill, terminate, etc.)
+- **Result** — Success or failure with error details
+
+Audit logs are shipped to the tenant's configured log destination (e.g., S3, Elasticsearch) and retained according to the tenant's compliance policy.
+
+## Data Protection
+
+### Encryption at Rest
+
+All persistent data is encrypted at rest:
+- Kubernetes etcd encryption for secrets
+- Qdrant data volumes use encrypted storage classes
+- Session recordings use AES-256-GCM encryption
+- Vault uses auto-unseal with a cloud KMS
+
+### TLS for All Connections
+
+All network communication uses TLS:
+- External traffic: TLS 1.3 via Traefik ingress
+- Internal traffic: mTLS between services (via service mesh or manual certificate management)
+- NATS: TLS-encrypted connections
+- Qdrant: TLS-encrypted gRPC and HTTP
+
+### Ephemeral by Default
+
+Sessions produce no persistent data unless explicitly configured:
+- Workspace files exist only in the container's ephemeral storage
+- Credentials are stored in tmpfs (in-memory only)
+- Container filesystem is destroyed on termination
+- No data leaks between sessions
+
+<Aside type="note">
+If persistent workspaces are needed (e.g., for long-running projects), they can be enabled per tenant with encrypted PersistentVolumeClaims. Even then, data is encrypted at rest and access-controlled.
+</Aside>
+
+## Compliance
+
+### SOC 2 Readiness
+
+The platform is designed with SOC 2 Type II controls in mind:
+
+| Trust Service Criteria | Implementation |
+|------------------------|----------------|
+| **Security** | Container isolation, network policies, credential management, audit logging |
+| **Availability** | Kubernetes auto-scaling, health checks, pod disruption budgets |
+| **Processing Integrity** | Session recording, tamper-evident logs, input validation |
+| **Confidentiality** | Encryption at rest and in transit, tenant isolation, ephemeral sessions |
+| **Privacy** | Data minimization, session ephemerality, configurable retention |
+
+### GDPR Considerations
+
+**Data residency:**
+- Deployments can be region-locked to specific cloud regions
+- Qdrant instances and session recordings stay within the configured region
+- No cross-region data transfer unless explicitly configured
+
+**Right to deletion:**
+- Tenant offboarding triggers deletion of all tenant data (Qdrant collections, recordings, credentials, audit logs)
+- Individual session data is deleted automatically on session termination (ephemeral by default)
+- Data retention periods are configurable per tenant to meet local regulations
+
+**Data minimization:**
+- Sessions collect only the data necessary for operation
+- No telemetry or usage data is collected without explicit consent
+- Session recordings are opt-in, not opt-out

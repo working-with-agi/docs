@@ -30,13 +30,14 @@ Embed it with an iframe or the JavaScript SDK:
 
 ```typescript
 // SDK: full control
-import { WorkAGI } from "@working-with-agi/sdk";
+import { WorkAGI } from "@work-with-ai/sdk";
 
-const term = WorkAGI.terminal("#container", {
+const term = WorkAGI.terminal({
+  container: "#container",
+  endpoint: "https://your-server:8600",
   theme: "dark",
-  ai: true,
-  recording: true,
-  onThreat: (alert) => notify(alert),
+  onConnect: () => console.log("Connected"),
+  onDisconnect: () => console.log("Disconnected"),
 });
 ```
 
@@ -45,15 +46,12 @@ const term = WorkAGI.terminal("#container", {
 Index documents, code, and wikis — then let users search by describing what they need, not by remembering exact names:
 
 ```typescript
-const hub = WorkAGI.knowledgeHub({
-  index: "my-project",
-});
+import { KnowledgeClient } from "@work-with-ai/sdk";
 
-// Index a directory
-await hub.ingest("./src");
+const kb = new KnowledgeClient("https://your-hub:8610", "your-api-key");
 
 // Search by intent
-const results = await hub.search("error handling for API timeouts");
+const results = await kb.search("error handling for API timeouts");
 // → source, section, relevance score, snippet
 ```
 
@@ -70,7 +68,7 @@ Your App
   │
   ├── WorkAGI.terminal()       →  WebSocket (Socket.IO) → PTY + AI Agent
   │
-  └── WorkAGI.knowledgeHub()   →  REST API → Embedding → Vector DB
+  └── KnowledgeClient          →  REST API → Embedding → Vector DB
 ```
 
 Both components are self-hostable. No data leaves your infrastructure unless you choose our managed service.
