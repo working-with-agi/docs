@@ -111,6 +111,17 @@ export default defineConfig({
           ],
         },
         {
+          label: "Guides",
+          translations: { ja: "ガイド" },
+          items: [
+            {
+              label: "Deploy to Cloudflare Workers",
+              translations: { ja: "Cloudflare Workers へのデプロイ" },
+              link: "/guides/deploy-cloudflare/",
+            },
+          ],
+        },
+        {
           label: "SDK",
           translations: { ja: "SDK" },
           items: [

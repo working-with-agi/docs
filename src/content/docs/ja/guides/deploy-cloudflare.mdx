@@ -1,0 +1,225 @@
+---
+title: Cloudflare Workers へのデプロイ
+description: Next.js コンソールアプリを OpenNext と GitHub Actions で Cloudflare Workers にデプロイする
+---
+
+import { Steps, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+[OpenNext](https://opennext.js.org/cloudflare) を使って Next.js アプリケーションを Cloudflare Workers にデプロイします。SSR、API ルート、エッジパフォーマンスを完全にサポートします。
+
+## 概要
+
+| コンポーネント | 役割 |
+|---|---|
+| **Next.js 16** | アプリケーションフレームワーク（App Router） |
+| **@opennextjs/cloudflare** | Next.js を Cloudflare Workers 互換の出力にビルド |
+| **wrangler** | Cloudflare CLI（デプロイ用） |
+| **GitHub Actions** | CI/CD パイプライン |
+
+<Aside type="tip">
+  OpenNext は Next.js の出力（API ルート、ミドルウェア、SSR を含む）を単一の Cloudflare Worker に変換します。Next.js アプリのコード変更は不要です。
+</Aside>
+
+## 前提条件
+
+- Cloudflare アカウント
+- Next.js プロジェクトの GitHub リポジトリ
+- Node.js 22+
+
+<Steps>
+1. ### 依存関係のインストール
+
+   ```bash
+   npm install @opennextjs/cloudflare
+   ```
+
+2. ### `open-next.config.ts` の作成
+
+   ```typescript
+   import type { OpenNextConfig } from "@opennextjs/cloudflare";
+
+   const config: OpenNextConfig = {
+     default: {
+       override: {
+         wrapper: "cloudflare-node",
+         converter: "edge",
+         proxyExternalRequest: "fetch",
+         incrementalCache: "dummy",
+         tagCache: "dummy",
+         queue: "dummy",
+       },
+     },
+     edgeExternals: ["node:crypto"],
+     middleware: {
+       external: true,
+       override: {
+         wrapper: "cloudflare-edge",
+         converter: "edge",
+         proxyExternalRequest: "fetch",
+         incrementalCache: "dummy",
+         tagCache: "dummy",
+         queue: "dummy",
+       },
+     },
+   };
+
+   export default config;
+   ```
+
+3. ### `wrangler.jsonc` の作成
+
+   ```json
+   {
+     "$schema": "node_modules/wrangler/config-schema.json",
+     "name": "your-app-name",
+     "main": ".open-next/worker.js",
+     "compatibility_date": "2025-04-01",
+     "compatibility_flags": ["nodejs_compat"],
+     "assets": {
+       "directory": ".open-next/assets",
+       "binding": "ASSETS"
+     }
+   }
+   ```
+
+4. ### `next.config.ts` の更新
+
+   `output: "standalone"` が設定されている場合は削除してください。Workers モードでは使用しません。
+
+   ```typescript
+   import type { NextConfig } from "next";
+
+   const nextConfig: NextConfig = {
+     // output: "standalone" は設定しない
+   };
+
+   export default nextConfig;
+   ```
+
+5. ### npm スクリプトの追加
+
+   ```json
+   {
+     "scripts": {
+       "build:worker": "npx @opennextjs/cloudflare build",
+       "preview": "npx wrangler dev",
+       "deploy": "npx wrangler deploy"
+     }
+   }
+   ```
+
+6. ### ローカルプレビュー
+
+   ```bash
+   npm run build:worker
+   npm run preview
+   ```
+
+   `http://localhost:8787` を開いて動作確認します。
+</Steps>
+
+## GitHub Actions CI/CD
+
+### Secrets の設定
+
+リポジトリの **Settings → Secrets and variables → Actions** に以下を追加:
+
+| Secret | 説明 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare ダッシュボード → **My Profile → API Tokens** で「Edit Cloudflare Workers」テンプレートから作成 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare ダッシュボードの Overview ページで確認 |
+
+### ワークフロー
+
+`.github/workflows/deploy.yml` を作成:
+
+```yaml
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npx @opennextjs/cloudflare build
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+```
+
+`main` にプッシュすると自動でビルド & デプロイされます。
+
+## カスタムドメイン
+
+初回デプロイ後、カスタムドメインを設定:
+
+1. **Cloudflare ダッシュボード → Workers & Pages → 対象の Worker → Settings → Domains & Routes**
+2. **Add** → **Custom Domain** をクリック
+3. ドメインを入力（例: `app.example.com`）
+4. SSL は Cloudflare が自動で処理
+
+または `wrangler.jsonc` に追加:
+
+```json
+{
+  "routes": [
+    { "pattern": "app.example.com", "zone_name": "example.com" }
+  ]
+}
+```
+
+## API ルート
+
+Next.js の API ルート（`app/api/...`）は OpenNext 経由で Cloudflare Workers 上でそのまま動作します。追加設定は不要です。
+
+```
+app/
+  api/
+    v1/
+      users/
+        route.ts    → https://your-app.workers.dev/api/v1/users
+      health/
+        route.ts    → https://your-app.workers.dev/api/v1/health
+```
+
+## 環境変数
+
+非機密値は `wrangler.jsonc`、機密値は Cloudflare ダッシュボードで管理:
+
+```json
+{
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://app.example.com"
+  }
+}
+```
+
+機密値の設定:
+```bash
+npx wrangler secret put AUTH_SECRET
+```
+
+## トラブルシューティング
+
+| 問題 | 解決策 |
+|---|---|
+| `wrangler deploy` で `Pages project` エラー | `wrangler.jsonc` で `main`（Workers用）を使用し、`pages_build_output_dir`（Pages用）は使わない |
+| `output: "standalone"` でビルド失敗 | `next.config.ts` から `output: "standalone"` を削除 |
+| `node:crypto` エラー | `open-next.config.ts` に `edgeExternals: ["node:crypto"]` を追加 |
+| バンドルサイズ警告 | `compatibility_flags` に `nodejs_compat` を設定 |
