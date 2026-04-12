@@ -57,6 +57,11 @@ export default defineConfig({
               link: "/overview/",
             },
             {
+              label: "Cowork to Secretary",
+              translations: { ja: "Cowork to Secretary" },
+              link: "/cowork-to-secretary/",
+            },
+            {
               label: "Features",
               translations: { ja: "機能一覧" },
               link: "/features/",
