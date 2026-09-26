@@ -87,6 +87,11 @@ export default defineConfig({
               translations: { ja: "MAGI System デモ" },
               link: "/showcase/magi-system/",
             },
+            {
+              label: "Engine MRO Optimization",
+              translations: { ja: "航空エンジン整備計画の最適化" },
+              link: "/showcase/engine-mro-optimization/",
+            },
           ],
         },
         {

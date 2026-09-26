@@ -1,0 +1,452 @@
+---
+title: 航空エンジン整備計画の最適化
+description: 取卸し時期 × ワークスコープ × 予備エンジンを 1 本の MILP で同時最適化し、WorkWithAGI SDK のエージェントで運用するショーケース
+---
+
+import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+航空エンジンの整備計画は、「いつ外すか」「何をやるか」「その間どのエンジンで飛ばすか」という 3 つの意思決定が強く結合した問題です。本ショーケースでは、これらを **1 本の混合整数線形計画 (MILP)** として定式化し、WorkWithAGI SDK 上の AI エージェントがデータ収集・モデル実行・制約レビューまでを担う構成を紹介します。
+
+<Aside type="caution" title="データについて">
+  本ページで使用するフリートデータ（エンジン状態、コスト、TAT、LLP 寿命など）はすべて**合成・例示用の値**であり、特定の OEM・エンジン型式・航空会社の実データではありません。実運用では各社のショップマニュアルと契約条件に基づくパラメータに置き換えてください。
+</Aside>
+
+<CardGrid>
+  <Card title="経営層向け" icon="rocket">
+    ショップビジット費、燃料費、リース費、AOG リスクを **正味現在価値 (NPV)** で一元比較。「先送り」と「前倒し」のトレードオフを定量化します。
+  </Card>
+  <Card title="研究者向け" icon="open-book">
+    状態変数のリセット線形化、上界のみの状態表現が厳密になる条件、MIP ギャップの読み方、分解法・確率的拡張への道筋を解説します。
+  </Card>
+  <Card title="アーキテクト向け" icon="puzzle">
+    `AgiApiClient` / `KnowledgeClient` / `WorkAGI.terminal` による、サンドボックス化されたエージェント実行とプランナー UI への組み込み方を示します。
+  </Card>
+  <Card title="ソースコード" icon="github">
+    モデル一式は SDK リポジトリの `examples/engine-mro-optimization/` にあります（Python + PuLP、HiGHS / CBC / SCIP 対応）。
+  </Card>
+</CardGrid>
+
+---
+
+## 1. 課題
+
+ナローボディ機 1 機あたり 2 基のエンジンは、フリート全体で最も高額な保守対象です。1 回のショップビジット (SV) は数百万ドル規模になり、その時期と内容の判断が数年単位のコストを左右します。
+
+| 要因 | 内容 | 計画への影響 |
+|---|---|---|
+| **ショップビジット費** | ワークスコープ（性能回復のみ／コア LLP 交換／LP LLP 交換／フルオーバーホール）ごとに費用と TAT が大きく異なる | 深いワークスコープは高いが、次回 SV までの間隔が延びる |
+| **EGT マージン劣化** | 飛行サイクルとともに排気温度 (EGT) マージンが減少し、燃料消費が増加 | 劣化したエンジンを飛ばし続けるほど燃料費が増え、マージンが尽きれば取卸し必須 |
+| **LLP 寿命上限** | ディスク・シャフト等の寿命限界部品 (LLP) は認定サイクル数で強制交換 | モジュールごとの残寿命が SV 時期とワークスコープを拘束 |
+| **ショップ能力** | 同時に入場できるエンジン数（スロット、契約枠）に上限 | 取卸しが集中すると待ちが発生し、前倒し・後ろ倒しが必要 |
+| **予備エンジン** | 自社予備で足りない月は短期リース、それも足りなければ機体が地上待機 (AOG) | リース費と AOG 損失が、SV のタイミング選択に跳ね返る |
+
+これらは互いにトレードオフの関係にあります。
+
+- **先送り**すると SV 費の割引効果は得られるが、燃料費が増え、LLP や EGT の限界に同時に達して能力超過・AOG のリスクが高まる。
+- **前倒し**すると LLP の残寿命（=資産価値）を捨てることになるが、ショップの山を平準化でき、予備エンジンの手当ても容易になる。
+- **ワークスコープを深くする**と一度に LLP をまとめて更新でき次回の取卸しを遠ざけられるが、目先のキャッシュアウトと TAT が増える。
+
+表計算やルールベースの計画では、エンジン 1 基ずつの判断は合理的でも、フリート全体の能力・予備エンジン制約との整合がとれません。そこで、全エンジン・全期間・全ワークスコープを同時に扱う最適化モデルを用います。
+
+---
+
+## 2. アーキテクチャ
+
+最適化モデル自体は Python（PuLP + HiGHS）で書かれた小さなパッケージです。WorkWithAGI SDK は、その周囲の「データを集め、モデルを動かし、結果を検証し、プランナーに見せる」部分を担います。
+
+```
+ ┌──────────────────────────── プランナー Web UI ─────────────────────────────┐
+ │                                                                            │
+ │   Gantt / KPI ビュー            WorkAGI.terminal({ container, sessionId })  │
+ │   (plan.json を描画)            ┌────────────────────────────────────────┐  │
+ │          ▲                      │  modeler (main)  │  reviewer (pane)    │  │
+ │          │                      └────────┬─────────┴──────────┬──────────┘  │
+ └──────────┼───────────────────────────────┼────────────────────┼─────────────┘
+            │ plan.json                     │ WebSocket (PTY)    │
+            │                               ▼                    ▼
+ ┌──────────┴──────────────────  サンドボックス化されたセッション  ─────────────────┐
+ │  AgiApiClient.createSession({ user_id, tool: "claude", prompt })              │
+ │  AgiApiClient.addPane(sessionId, { tool: "claude", role: "reviewer" })        │
+ │                                                                               │
+ │   modeler:  データ整形 → solve.py 実行 → plan.json / レポート生成              │
+ │   reviewer: plan.json を LLP 上限・TAT・ワークスコープ定義と突き合わせて指摘    │
+ │                                                                               │
+ │   examples/engine-mro-optimization/                                           │
+ │     engine_mro/data.py   engine_mro/model.py   engine_mro/report.py           │
+ │     solve.py  ──►  HiGHS / CBC / SCIP                                         │
+ └───────────────────────────────────────▲───────────────────────────────────────┘
+                                         │ knowledge.context(query)
+ ┌───────────────────────────────────────┴───────────────────────────────────────┐
+ │  KnowledgeClient                                                              │
+ │    upload(fleet_status.json)      フリート状態（EGT マージン、LLP 残、稼働率）   │
+ │    upload(engine_shop_manual.pdf) ワークスコープ定義、TAT、LLP 認定寿命         │
+ │    upload(llp_back_to_birth.csv)  LLP のバック・トゥ・バース履歴               │
+ └───────────────────────────────────────────────────────────────────────────────┘
+```
+
+| SDK 要素 | 役割 |
+|---|---|
+| `AgiApiClient.createSession({ user_id, tool: "claude", prompt })` | サンドボックス化された AI ターミナルセッションを作成。`prompt` で modeler エージェントにタスクを渡す |
+| `AgiApiClient.addPane(sessionId, { tool, role })` | 同じセッションに `reviewer` などの役割ペインを追加。ペインはセッションのファイルを共有する |
+| `KnowledgeClient.upload(file, id)` | フリートデータ、ショップマニュアル、LLP 履歴をナレッジベースに取り込む |
+| `KnowledgeClient.context(query, limit)` | 制約条件（LLP 寿命、TAT、ワークスコープ内容）に関する抜粋を取得し、プロンプトに注入 |
+| `WorkAGI.terminal({ container, endpoint, apiKey, sessionId })` | エージェントの作業ターミナルをプランナーの Web UI に埋め込む |
+
+### 役割分担
+
+- **modeler エージェント** — ナレッジから得た数値を `data/*.json` 形式に整形し、`solve.py` を実行してプランを生成します。パラメータを変えた感度分析（ショップ枠 1 → 2、リース単価 ±30% など）も CLI オプションで実行します。
+- **reviewer エージェント** — 出力された `plan.json` を、ショップマニュアルの記述や LLP 履歴と照合します。「モデル上は許容されているが、マニュアル上は同時交換が必要な LLP がある」といった、定式化の外側にある制約違反を指摘し、データやモデルの修正につなげます。
+- **プランナー（人間）** — 埋め込みターミナル越しに両エージェントの作業を監視し、最終的なプランを承認します。最適化の結果は意思決定の材料であり、承認責任は人間に残ります。
+
+### コード例: ナレッジの投入とセッション作成
+
+```typescript
+import { AgiApiClient, KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
+
+const endpoint = "https://api.workwithagi.dev";
+const apiKey = import.meta.env.VITE_AGI_KEY;
+
+// 1) 計画の前提となる資料をナレッジベースへ
+const kb = new KnowledgeClient(endpoint, apiKey);
+await kb.upload(fleetStatusFile, "fleet-status");        // EGT マージン, LLP 残, 稼働率
+await kb.upload(shopManualFile, "engine-shop-manual");   // ワークスコープ, TAT, LLP 寿命
+await kb.upload(llpRecordsFile, "llp-back-to-birth");    // LLP 履歴
+
+// 2) 制約条件に関する抜粋を取得
+const constraints = await kb.context(
+  "各モジュールの LLP 認定寿命、ワークスコープごとの交換範囲と TAT",
+  8,
+);
+
+// 3) modeler エージェントのセッションを作成
+const api = new AgiApiClient(endpoint, apiKey);
+const session = await api.createSession({
+  user_id: "planner-01",
+  tool: "claude",
+  label: "engine-mro-plan",
+  prompt: [
+    "examples/engine-mro-optimization で整備計画を作成してください。",
+    "以下の資料抜粋からパラメータを抽出し data/fleet.json を作成、",
+    "python solve.py data/fleet.json --json-out plan.json を実行してください。",
+    "--- 資料抜粋 ---",
+    constraints.context,
+  ].join("\n"),
+});
+
+// 4) reviewer ペインを追加（同じセッションのファイルを参照できる）
+const reviewer = await api.addPane(session.session_id, {
+  tool: "claude",
+  role: "reviewer",
+});
+
+// 5) プランナー UI に埋め込み
+const term = WorkAGI.terminal({
+  container: "#mro-terminal",
+  endpoint,
+  apiKey,
+  sessionId: session.session_id,
+  theme: "dark",
+});
+```
+
+<Aside type="tip">
+  エージェントはサンドボックス化されたセッション内で動作するため、ソルバーのインストールや大規模な計算を行っても、プランナーの端末や社内システムには影響しません。
+</Aside>
+
+---
+
+## 3. 数理モデル
+
+`engine_mro/model.py` の定式化をそのまま記述します。期間は月単位（1 期 = 1 か月）、金額は k$（千ドル）です。
+
+### 集合
+
+```
+E           エンジン（シリアル番号 ESN）
+T = {0, …, H−1}   計画月（H = 計画期間、サンプルでは 48 か月）
+W           ワークスコープ（PR, CORE, LP, FULL）
+W^R ⊆ W     性能回復を伴うワークスコープ（EGT マージンをリセットするもの）
+M           モジュール（FAN_LPC, HPC, HPT, LPT）
+R_w ⊆ M     ワークスコープ w で LLP スタックを交換するモジュール
+```
+
+### パラメータ
+
+| 記号 | 意味 | データ上の名前 |
+|---|---|---|
+| `G^max` | EGT マージンの上限 [°C] | `egt_margin_max` |
+| `g⁰_e`, `r⁰_em` | 初期 EGT マージン、初期 LLP 残寿命 | `egt_margin`, `llp_remaining` |
+| `c_e` | 月間サイクル数 | `cycles_per_month`（エンジン別に上書き可） |
+| `Δg_e` | 月間 EGT 劣化 = `egt_loss_per_1000_cycles · c_e / 1000` | `egt_loss_per_1000_cycles` |
+| `ℓ_m` | モジュール m の LLP 認定寿命 [cycles] | `llp_life` |
+| `C_w`, `TAT_w` | ワークスコープの費用、ターンアラウンド月数 | `cost`, `tat` |
+| `Ĝ_w` | 性能回復後の EGT マージン（w ∈ W^R） | `egt_restore_to` |
+| `a_e` | 既に入場中のエンジンが月 `a_e` まで使用不可 | `in_shop_until` |
+| `ι_e` | 計画開始時に機体に装着されているか (0/1) | `installed` |
+| `P` | 常時装着が必要なエンジン位置数 | `installed_positions` |
+| `S` | 同時入場可能数（ショップ枠） | `shop_slots` |
+| `L^max` | 短期リース可能数 | `max_lease_engines` |
+| `φ` | EGT マージン 1°C 喪失あたりの月間燃料費増 | `fuel_penalty_per_degC_month` |
+| `c^L`, `c^chg`, `c^AOG` | リース費/月、エンジン交換費、AOG ペナルティ/月 | `lease_cost_per_month` ほか |
+| `δ_t` | 割引係数 `(1+ρ)^(−t/12)` | `discount_rate_annual` |
+| `κ`, `v^g`, `v^m` | 期末資産価値の掛け目、EGT 1°C の価値、LLP 1 サイクルの価値 | `terminal_value_factor` ほか |
+
+### 決定変数と状態変数
+
+```
+x[e,t,w] ∈ {0,1}   エンジン e を月 t の初めにワークスコープ w で入場させる（t ≥ a_e のみ定義）
+u[e,t]   ∈ {0,1}   エンジン e が月 t に機体に装着され飛行している
+y[e,t]   ∈ [0,1]   エンジン e を月 t に機体へ装着する（交換イベント）
+L[t]     ∈ {0,…,L^max}  月 t の短期リースエンジン数
+s[t]     ≥ 0       月 t の未充足エンジン位置数（AOG）
+
+状態（月 t の初め、t = 0, …, H）
+g[e,t]   ∈ [0, G^max]  EGT マージン [°C]
+r[e,m,t] ∈ [0, ℓ_m]    モジュール m の LLP 残寿命 [cycles]
+f[e,t]   ≥ 0          劣化による燃料費ペナルティ
+```
+
+`y` と `s` は連続変数ですが、`u` が 0-1 であり目的関数で正のコストを持つため、最適解では自動的に整数（`y`）または必要最小量（`s`）になります。
+
+### 制約
+
+ショップ滞在を次の式で表します（TAT の間はショップを占有）。
+
+```
+inShop(e,t) = Σ_{w∈W} Σ_{τ = max(0, t−TAT_w+1)}^{t} x[e,τ,w]  +  [t < a_e]
+```
+
+**(1) 稼働可能性** — エンジンは「飛行中」「入場中」「予備として待機」のいずれか。SV の重複も同時に禁止されます。
+
+```
+u[e,t] + inShop(e,t) ≤ 1                                   ∀ e, t
+```
+
+**装着イベント** — 前月に飛んでいなかったエンジンを飛ばすと交換コストが発生。
+
+```
+y[e,t] ≥ u[e,t] − u[e,t−1]        （t = 0 では u[e,−1] = ι_e）
+```
+
+**(2) EGT マージンの推移とリセット**
+
+```
+g[e,0]   = g⁰_e
+g[e,t+1] ≤ g[e,t] − Δg_e · u[e,t] + Σ_{w∈W^R} Ĝ_w · x[e,t,w]
+g[e,t+1] ≤ Ĝ_w + (G^max − Ĝ_w) · (1 − x[e,t,w])           ∀ w ∈ W^R
+0 ≤ g[e,t] ≤ G^max
+```
+
+1 本目は「飛行すれば劣化、性能回復 SV なら加算」、2 本目は性能回復を行った場合に回復後の値を `Ĝ_w` で頭打ちにする big-M 制約です（`G^max − Ĝ_w` が M に相当）。`g ≥ 0` は「EGT マージンが尽きる前に必ず取り外す」というハード制約として働きます。入場中は `u = 0` なので状態は変化しません。
+
+**(3) LLP 残寿命の推移とリセット**
+
+```
+r[e,m,0]   = r⁰_em
+r[e,m,t+1] ≤ r[e,m,t] − c_e · u[e,t] + ℓ_m · Σ_{w : m∈R_w} x[e,t,w]
+0 ≤ r[e,m,t] ≤ ℓ_m
+```
+
+LLP 交換を行うと `+ℓ_m` が加わり、上限 `ℓ_m`（変数の上界）で頭打ちになるため、別途リセット制約は不要です。`r ≥ 0` が LLP 寿命上限を表します。
+
+**(4) 燃料ペナルティ** — 飛行中のエンジンにのみ、失われたマージンに比例した燃料費を課します。
+
+```
+f[e,t] ≥ φ · (G^max − g[e,t]) − φ · G^max · (1 − u[e,t]),   f[e,t] ≥ 0
+```
+
+`u = 0` のとき右辺は `−φ·g ≤ 0` となり制約が無効化されます。
+
+**(5) 需要充足** — 全エンジン位置を自社エンジン・リース・AOG のいずれかで埋める。
+
+```
+Σ_e u[e,t] + L[t] + s[t] ≥ P                               ∀ t
+```
+
+**(6) ショップ能力**
+
+```
+Σ_e inShop(e,t) ≤ S                                        ∀ t
+```
+
+### 目的関数
+
+割引後の総コストから、計画期末に残る資産価値（EGT マージンと LLP 残寿命）を差し引いた値を最小化します。
+
+```
+min  Σ_t δ_t · [ Σ_{e,w} C_w · x[e,t,w]           ショップビジット
+               + c^L   · L[t]                     予備エンジンのリース
+               + c^chg · Σ_e y[e,t]               エンジン交換
+               + c^AOG · s[t]                     AOG
+               + Σ_e f[e,t] ]                     燃料劣化
+     − κ · δ_H · [ Σ_e v^g · g[e,H] + Σ_{e,m} v^m_m · r[e,m,H] ]   期末資産価値
+```
+
+期末価値の項がないと、「計画期間の終わり直前に SV を避け、使い切った状態で引き渡す」という終端効果が生じます。`κ < 1`（サンプルでは 0.8）の掛け目は、逆に期末価値を過大評価して不要な SV を誘発しないための調整です。
+
+### 上界のみの状態表現が厳密である理由
+
+状態 `g`, `r` には等式ではなく **上界（≤）だけ** を課しています。それでも物理的な値と一致する理由は次のとおりです。
+
+1. 状態が目的関数に現れるのは、期末価値（係数が負 = 大きいほど得）と燃料ペナルティ `f ≥ φ(G^max − g)`（`g` が大きいほど下限が下がる）のみ。どちらも **`g`, `r` を大きくする方向にしか働かない**。
+2. 制約側でも、`g ≥ 0`, `r ≥ 0` や次期の上界は `g`, `r` が大きいほど緩くなる。
+3. したがって任意の実行可能解について、`(x, u, L, s, y)` を固定したまま状態を上界いっぱい（=物理値）に引き上げても実行可能性は保たれ、目的関数値は悪化しない。
+
+つまり、状態を上界に張り付けた最適解が必ず存在し、**計画 `(x, u)` の最適性は等式制約版と同一**です。なお、途中の状態が物理値を下回る代替最適解（直後にリセットされるため価値に差が出ないケース）が返ることはありますが、それは安全側（残寿命・マージンを少なめに見積もる側）の表示であり、計画自体の妥当性は損なわれません。この性質により、`max` や `if` を使った非線形の状態遷移を、0-1 変数を増やさずに線形化できています。
+
+### 問題規模（サンプルデータ）
+
+12 基（装着 10 + 予備 2）× 48 か月 × 4 ワークスコープで、`x` が約 2,300、`u` が 576 の 0-1 変数と、48 個の整数変数 `L` を持つ MILP です。
+
+---
+
+## 4. 実行方法
+
+<Steps>
+
+1. 依存パッケージをインストールします。
+
+   ```bash
+   cd examples/engine-mro-optimization
+   pip install -r requirements.txt
+   ```
+
+   `requirements.txt` には `pulp`, `highspy` と、SCIP バックエンド用の `ortools` が含まれます。
+
+2. サンプルフリートで計画を解きます。
+
+   ```bash
+   python solve.py data/sample_fleet.json
+   ```
+
+3. 必要に応じてソルバーや前提条件を変えて再計算します。
+
+   ```bash
+   # SCIP (OR-Tools 経由) で 8 スレッド、制限時間 300 秒
+   python solve.py data/sample_fleet.json --solver scip --threads 8 --time-limit 300
+
+   # ショップ枠を 1 に絞り、リース単価を 250 k$/月にした感度分析。結果を JSON 出力
+   python solve.py data/sample_fleet.json --shop-slots 1 --lease-cost 250 --json-out plan.json
+   ```
+
+</Steps>
+
+| オプション | 既定値 | 内容 |
+|---|---|---|
+| `--solver highs\|cbc\|scip` | `highs` | 使用する MIP ソルバー |
+| `--threads N` | ソルバー既定 | 並列スレッド数 |
+| `--time-limit SEC` | `120` | 制限時間 [秒] |
+| `--gap REL` | `0.005` | 停止判定に用いる相対 MIP ギャップ |
+| `--horizon N` | データ値 | 計画期間 [月] の上書き |
+| `--shop-slots N` | データ値 | ショップ枠の上書き |
+| `--lease-cost K` | データ値 | リース単価 [k$/月] の上書き |
+| `--json-out PATH` | — | 解全体（SV 一覧、稼働、EGT/LLP 推移、コスト内訳）を JSON で保存 |
+| `-v`, `--verbose` | — | ソルバーログを表示 |
+
+標準出力には、ステータスと MIP ギャップ、割引後コスト内訳、SV 一覧（取卸し時の EGT マージンと各モジュール LLP 残）、KPI、エンジン別の Gantt 表示が出力されます。
+
+### SDK からの実行
+
+プランナー UI のボタンから、感度分析を含む一連の実行をエージェントに任せる例です。
+
+<Tabs>
+  <TabItem label="TypeScript">
+  ```typescript
+  import { AgiApiClient, WorkAGI } from "@work-with-ai/sdk";
+
+  const api = new AgiApiClient(endpoint, apiKey);
+
+  const session = await api.createSession({
+    user_id: "planner-01",
+    tool: "claude",
+    label: "engine-mro-sensitivity",
+    prompt: `
+  cd examples/engine-mro-optimization
+  pip install -r requirements.txt
+  次の 3 ケースを実行し、結果を比較表にまとめて results/summary.md に保存してください:
+    1) python solve.py data/sample_fleet.json --threads 8 --json-out results/base.json
+    2) python solve.py data/sample_fleet.json --shop-slots 1 --json-out results/slots1.json
+    3) python solve.py data/sample_fleet.json --lease-cost 250 --json-out results/lease250.json
+  各ケースについて MIP ギャップは相対値と絶対値の両方を記載すること。`,
+  });
+
+  // レビュー担当ペイン
+  await api.addPane(session.session_id, { tool: "claude", role: "reviewer" });
+
+  // プランナー画面に作業ターミナルを表示
+  WorkAGI.terminal({
+    container: "#mro-terminal",
+    endpoint,
+    apiKey,
+    sessionId: session.session_id,
+  });
+  ```
+  </TabItem>
+  <TabItem label="Python（直接）">
+  ```python
+  from engine_mro import load, solve
+  from engine_mro.report import text_report
+
+  data = load("data/sample_fleet.json")
+  sol = solve(data, solver="highs", time_limit=120, threads=8)
+  print(text_report(data, sol))
+  print(sol.status, sol.objective, sol.abs_gap, sol.mip_gap)
+  ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 5. 結果例
+
+<Aside type="note" title="合成データによる例">
+  以下は合成データ `data/sample_fleet.json`（5 機 × 2 基 + 自社予備 2 基、48 か月）による計算例です。実在のフリートやエンジンの実績値ではありません。
+</Aside>
+
+{/* RESULTS: filled after final solve */}
+
+---
+
+## 6. 計算上の注意と研究的拡張
+
+### MIP ギャップの読み方
+
+MIP ソルバーは、見つけた最良の実行可能解（primal、上界）と、それ以上良くならないことが証明された下界（dual bound）を同時に更新します。報告される相対ギャップは次の式です。
+
+```
+相対ギャップ = (primal − dual) / |primal|
+絶対ギャップ =  primal − dual        [k$, NPV]
+```
+
+本モデルの目的関数は **大きな期末資産価値クレジットを差し引いた正味値** です。分母 `|primal|` がコストの総額よりずっと小さくなるため、相対ギャップは実際の誤差に比べて大きく見えます。総コストが大きくても正味値が小さければ、数 % の相対ギャップが絶対額ではごく小さな差にすぎないことがあります。`Solution` は `dual_bound`, `abs_gap`, `mip_gap` を持つため、**相対ギャップと絶対ギャップを併記**して判断してください。`--gap` による停止判定も相対値である点に注意が必要です。
+
+<Aside type="caution">
+  HiGHS を PuLP 経由で使う場合、PuLP は制限時間で打ち切られた場合も `Optimal` と報告します。本サンプルは HiGHS 本体のステータス（`Time limit reached` など）と dual bound を直接読み出して表示します。
+</Aside>
+
+### big-M リセットの弱さ
+
+EGT リセット制約 `g[e,t+1] ≤ Ĝ_w + (G^max − Ĝ_w)(1 − x)` と LLP の `+ℓ_m · x` 項は、LP 緩和で `x` が小数値を取ると効果が薄まる典型的な big-M 形式です。小数の `x` で「少しだけ SV して状態を大きく回復する」緩和解が生じ、dual bound が伸び悩む主因になります。改善策としては次が考えられます。
+
+- M を最小化する（本モデルは `G^max − Ĝ_w` と `ℓ_m` で既に最小限）
+- SV から次の SV までの区間を 1 本の列として扱う **拡張定式化**（区間変数 `z[e,t₁,t₂,w]`）。緩和は大幅に強くなるが変数数は O(|E|·H²·|W|)
+- LLP 期限から導かれる「この月までに SV 必須」といった有効不等式の追加
+
+### 研究的拡張
+
+| 拡張 | 概要 |
+|---|---|
+| **確率的な計画外取卸し** | 鳥衝突や FOD、ボアスコープ所見による計画外取卸しをシナリオとして与える 2 段階確率計画、または予備エンジン数に対するロバスト最適化 |
+| **ローリングホライズン** | 毎月最新の EGT トレンド・LLP 消費で再最適化し、直近数か月のみ確定させる運用。終端効果は期末価値項で緩和 |
+| **Dantzig–Wolfe 分解 / 列生成** | エンジンごとの SV スケジュールを列とし、ショップ能力・需要充足を連結制約とするマスター問題に分解。価格付け問題はエンジン単位の動的計画法で解ける |
+| **CP-SAT** | TAT を区間変数として表現し、ショップ能力を累積制約 (cumulative) で扱う制約プログラミング定式化との比較 |
+| **モジュール単位のショップ経路** | エンジンをモジュールに分解し、モジュールごとの修理ラインや交換用モジュールのプールまで扱う詳細スケジューリング |
+| **複数ショップ・外注** | 自社ショップと複数の外部 MRO ベンダーを、単価・TAT・輸送時間・契約最低量付きで選択するモデル |
+
+---
+
+## 関連ページ
+
+- [SDK クイックスタート](/ja/sdk/quickstart/) — `AgiApiClient` とターミナルの基本
+- [ナレッジベース (RAG)](/ja/sdk/knowledge/) — `KnowledgeClient` の詳細
+- [パイロットモード](/ja/sdk/pilot-mode/) — メインターミナルとエージェントペインの UI
