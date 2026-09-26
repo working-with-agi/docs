@@ -1,32 +1,34 @@
 ---
 title: Shop Quote Selection under Uncertainty
-description: Comparing engine shop quotes as "price + risk distribution" and choosing shop, workscope, induction month and spare engines with a two-stage stochastic MILP solved by Monte Carlo and SAA
+description: Comparing engine shop quotes as "price + risk distribution" and choosing shop, workscope, induction month and spare engines under decision deadlines, budgets, LLP kits and contract terms, with a two-stage stochastic MILP solved by Monte Carlo and SAA
 ---
 
 import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 <Aside type="tip" title="Part 2">
-  This page is part 2 of [Engine MRO Optimization](/en/showcase/engine-mro-optimization/). Part 1 decides *when* and *with which workscope* deterministically; this page decides **which shop** to send each engine to, under uncertainty in cost overruns, TAT delays and unscheduled removals.
+  This page is part 2 of [Engine MRO Optimization](/en/showcase/engine-mro-optimization/). Part 1 decides *when* and *with which workscope* deterministically; this page decides **which shop** to send each engine to, under uncertainty in cost overruns, TAT delays, FX and unscheduled removals.
 </Aside>
 
-When sending engine shop visits to external shops, comparing the quoted prices alone does not tell you where to send them. Who pays for extra work driven by teardown findings? How much can the TAT slip? If another engine fails in the meantime, are there enough spares? This showcase solves these questions as a **two-stage stochastic MILP over Monte Carlo scenarios** and decides two things at once:
+When sending engine shop visits to external shops, comparing the quoted prices alone does not tell you where to send them. Who pays for extra work driven by teardown findings? How much can the TAT slip? For foreign-currency quotes, how will the exchange rate move? If another engine fails in the meantime, are there enough spares? On top of that come company constraints: fiscal-year budgets, LLP kits on hand, minimum-volume contracts with shops. This showcase solves all of this as a **two-stage stochastic MILP over Monte Carlo scenarios** and decides at once:
 
-- the **shop, workscope and induction month** for each planned shop visit
+- the **shop, workscope, induction month and whether to expedite** for each planned shop visit
 - the number of **spare engines to lease long-term** for the whole horizon
 
+It then answers the first question planners actually get asked: **"Which engines do we have to decide on now?"**
+
 <Aside type="caution" title="About the data">
-  All quotes, risk profiles and fleet data on this page are **synthetic and illustrative**. They are not quotes from any OEM or real shop.
+  All quotes, risk profiles, fleet data and budgets on this page are **synthetic and illustrative**. They are not quotes from any OEM or real shop. Results depend heavily on the assumptions (spare ratio, lease availability in peak season, etc.); calibrate with your own data before use.
 </Aside>
 
 <CardGrid>
   <Card title="For executives" icon="rocket">
-    Compares shops by **expected cost, P90 and AOG probability** instead of the lowest quote, and puts a dollar figure (VSS) on the difference from planning with averages.
+    Compares shops by **expected cost, P90 and disruption probability** instead of the lowest quote, and shows which engines must be decided this month and what hurrying or waiting would cost.
   </Card>
   <Card title="For researchers" icon="open-book">
     Covers SAA, common random numbers, the expected-value benchmark, out-of-sample evaluation with closed-form recourse, the Mak–Morton–Wood gap estimate, and a parallel comparison of 7 methods with a Pareto set.
   </Card>
   <Card title="For architects" icon="puzzle">
-    Shows a pipeline in which shop quote PDFs go into `KnowledgeClient`, and an agent converts them to JSON and runs `run.py`.
+    Shows a pipeline in which shop quote PDFs go into `KnowledgeClient`, and an agent converts them to JSON and runs `run.py` / `compare.py`.
   </Card>
   <Card title="Source code" icon="github">
     In the SDK repository under `examples/engine-shop-selection-mc/` (Python + PuLP + HiGHS + NumPy).
@@ -39,46 +41,89 @@ When sending engine shop visits to external shops, comparing the quoted prices a
 
 For the same workscope, shops differ in contract type and risk profile.
 
-| Shop (sample) | Contract | `overrun_share` | Characteristics |
-|---|---|---:|---|
-| `IN-HOUSE` in-house shop | T&M (time and material) | 1.0 | No shipping, 1 slot. The operator pays all overruns from findings |
-| `OEM-NET` OEM network shop | Fixed price | 0.0 | Higher quote but no overrun and small delays. 1 month shipping, 2 slots |
-| `IND-MRO` independent MRO | Capped T&M (50% share) | 0.5 | Cheapest quote but longer TAT and widely spread congestion delays |
+| Shop (sample) | Contract | `overrun_share` | Currency | Characteristics |
+|---|---|---:|---|---|
+| `IN-HOUSE` in-house shop | T&M (time and material) | 1.0 | Home | No shipping, 1 slot, booked 1 month ahead. The operator pays all findings overruns. Expedite available |
+| `OEM-NET` OEM network shop | Fixed price | 0.0 | USD | Higher quote but no overrun and small delays. 1 month shipping, 2 slots, booked 4 months ahead. Expedite available. Minimum-volume contract of 2 visits |
+| `IND-MRO` independent MRO | Capped T&M (50% share) | 0.5 | USD | Cheapest quote but longer TAT and widely spread congestion delays. Booked 2 months ahead |
 
-`overrun_share` is the share of findings-driven overrun borne by the operator, so it captures the contract type in one number: 1 for T&M, 0 for fixed price, somewhere in between for capped T&M or shared overruns. Price differences between quotes only become comparable once this share and the delay distributions are taken into account.
+`overrun_share` is the share of findings-driven overrun borne by the operator, so it captures the contract type in one number: 1 for T&M, 0 for fixed price, somewhere in between for capped T&M or shared overruns. Price differences between quotes only become comparable once this share, the delay distributions and FX risk are taken into account.
 
 Moreover, per-shop decisions are not independent:
 
-- If delays hit several shops in the same months that visits overlap, spares run short and aircraft go **AOG** (aircraft on ground).
+- If delays hit several shops in the same months that visits overlap, spares run short and aircraft go **AOG** (aircraft on ground, i.e. disruptions). In peak season the loss is even larger.
 - **Unscheduled removals** during that period (bird strike, FOD, borescope findings) make the shortage worse.
 - Whether to secure spares up front with long-term leases or react with short-term leases must be decided together with shop selection.
+- Fiscal-year budgets, LLP kits on hand and minimum-volume contracts limit which combinations are allowed.
 
 ### Common random numbers
 
-Whether teardown findings exist is a property of the engine's condition and should not depend on which shop it goes to. So within a scenario, **every shop uses the same random draws** for a given engine (common random numbers). Shops differ only in how likely they are to bill the findings (`findings.prob`), the overrun distribution, and who pays (`overrun_share`). This keeps shop-to-shop differences from being buried in sampling noise. Congestion delay (`delay.shop_*`) is shared by all engines at the same shop within a scenario.
+Whether teardown findings exist is a property of the engine's condition and should not depend on which shop it goes to. So within a scenario, **every shop uses the same random draws** for a given engine (common random numbers). Shops differ only in how likely they are to bill the findings (`findings.prob`), the overrun distribution, and who pays (`overrun_share`). This keeps shop-to-shop differences from being buried in sampling noise. Congestion delay (`delay.shop_*`) is shared by all engines at the same shop within a scenario, and a single FX path per scenario is shared by all foreign-currency quotes.
 
 ---
 
-## 2. Input data
+## 2. Should we hurry? (decision deadlines)
 
-### `data/fleet_visits.json` — fleet and planned visits
+Before choosing a plan, the first practical question is **"which engines must we decide on now?"** For a given plan, `shop_mc/urgency.py` computes the following for each engine:
 
-The synthetic sample is a fleet of 10 narrow-body aircraft (20 installed positions, 21 owned engines) with 10 planned shop visits over 24 months.
+```
+decision deadline = planned induction month − longest lead time
+
+  lead-time candidates
+    shop slot booking   booking_lead_months of the chosen shop
+    LLP kit order       llp_kits.lead_time_months, only if the workscope uses an LLP kit
+                        and the kits on hand are already committed to earlier visits
+                        (kits on hand are allocated in order of induction month)
+
+status
+  deadline ≤ 0 months away  → "decide this month"
+  deadline ≤ 3 months away  → "within 3 months"
+  otherwise                 → "can wait"
+```
+
+The **cost-of-timing curve** moves only that engine to each month of its removal window (other engines fixed), re-chooses shop, workscope and expedite among the options available in that month to minimize expected total cost, and evaluates the result. Options that break the shop-slot, LLP-kit or fiscal-year-budget limits are excluded; if no option remains in a month, the curve records **which constraint blocked it** ("shop slots", "LLP kits", "FY2027 budget", etc.).
+
+```
+hurry cost = expected total cost at the earliest feasible month on the curve − plan's expected total cost
+wait cost  = expected total cost at the latest feasible month on the curve   − plan's expected total cost
+```
+
+Curves are evaluated on a common scenario sample (2,000 by default, `--urgency-scenarios`).
+
+In the sample, for the stochastic plan, E-901 and E-902 are "decide this month", and E-904 (4-month OEM slot booking) and E-906 (8-month LLP kit order) are "within 3 months". Engines whose deadline is further away can wait for updated quotes or teardown results before being decided.
+
+---
+
+## 3. Input data
+
+### `data/fleet_visits.json` — fleet, planned visits and company constraints
+
+The synthetic sample is a fleet of 10 narrow-body aircraft (20 installed positions, 22 owned engines, i.e. about 10% spares) with 10 planned shop visits over 24 months starting October 2026. Money is in k$ of home currency at today's exchange rate.
 
 | Key | Meaning | Real-world data source |
 |---|---|---|
+| `start` | Calendar month of the plan start (e.g. `2026-10`), used for fiscal years and peak seasons | Planning cycle |
 | `horizon_months` | Planning horizon [months] | Planning cycle |
 | `installed_positions` | Positions D that must always be filled | Fleet plan (aircraft × engines) |
 | `owned_engines` | Owned engines (installed + own spares) | Asset register |
 | `short_term_lease.cost_per_month` / `max_engines` | Short-term lease (recourse) rate and cap | Lessor quotes, market availability |
+| `short_term_lease.max_engines_peak` | Short-term leases available in peak months | Lease market conditions |
 | `long_term_spare.cost_per_month` / `max_engines` | Long-term spare lease (decided up front) rate and cap | Lessor quotes |
 | `aog_cost_per_month` | Loss from an unfilled position [k$/month] | Revenue, cost of substitute capacity |
+| `aog_peak_multiplier` | AOG cost multiplier per calendar month (1–12) for peak seasons | Network plan, demand forecast |
 | `unscheduled_removals.rate_per_engine_month` | Unscheduled removal rate (1/MTBUR) | In-house reliability data |
 | `unscheduled_removals.tat_months` / `tat_probs` | Distribution of off-wing months after an unscheduled removal | Repair history |
 | `workscope_build_value` | Value of the on-wing life a workscope builds beyond the horizon | Terminal value from the part 1 model, internal valuation |
+| `green_time_value_per_month` | Value of one month of on-wing life thrown away by removing before the limit (per-engine override allowed) | Shop visit cost ÷ time on wing, lease-rate equivalent |
+| `llp_kits.workscopes` | Workscopes that consume an LLP kit | WSPG |
+| `llp_kits.lead_time_months` / `on_hand` | LLP kit procurement lead time and kits on hand | Procurement, OEM delivery dates |
+| `budget.fiscal_year_start_month` / `by_fiscal_year` | Fiscal-year start month and maintenance budget per fiscal year (expected spend booked in the induction month's fiscal year) | Budget plan |
+| `fx.volatility` | FX volatility of foreign-currency quotes over the horizon (lognormal σ) | Implied volatility of FX options, etc. |
 | `engines[].esn` | Engine serial number | Asset register |
-| `engines[].window` | Removal window [earliest, latest] month | From EGT trend forecasts and LLP remaining life (or part 1's output) |
+| `engines[].window` | Removal window [earliest, latest] month; latest is a hard limit (LLP life, EGT margin or AD compliance) | From EGT trend forecasts and LLP remaining life (or part 1's output) |
 | `engines[].allowed_workscopes` | Workscopes permitted by the engine's condition | WSPG, LLP status, ADs/SBs |
+
+In the sample, the fiscal year starts in April, with budgets of FY2026 = 18,000, FY2027 = 30,000 and FY2028 = 15,000 k$. Peak months are December and January (×1.4), March (×1.2), May (×1.3), July (×1.6) and August (×1.8). There are 2 LLP kits on hand and new kits take 8 months.
 
 ### `data/shop_quotes.json` — shop quotes and risk profiles
 
@@ -86,7 +131,7 @@ The synthetic sample is a fleet of 10 narrow-body aircraft (20 installed positio
 |---|---|---|
 | `id` / `name` | Shop ID and name | — |
 | `slots` | Concurrent induction slots | Shop contract, slot availability |
-| `quotes.{WS}.price` | Quoted price incl. labour, material, LLP kits [k$] | Shop quote (budgetary or fixed price) |
+| `quotes.{WS}.price` | Quoted price incl. labour, material, LLP kits, in home currency at today's FX [k$] | Shop quote (budgetary or fixed price) |
 | `quotes.{WS}.tat` | Quoted TAT [months] | Shop quote |
 | `transport_cost` | Round-trip shipping, insurance, stand rental [k$/visit] | Logistics quotes |
 | `transport_months` | Extra off-wing time for shipping [months] | Logistics lead-time history |
@@ -96,10 +141,14 @@ The synthetic sample is a fleet of 10 narrow-body aircraft (20 installed positio
 | `findings.overrun_cv` | Coefficient of variation of the overrun (lognormal) | Same |
 | `delay.shop_months` / `shop_probs` | Shop-wide congestion delay distribution (shared by all engines at the shop in a scenario) | Shop loading, historical TAT |
 | `delay.engine_months` / `engine_probs` | Engine-specific delay distribution (parts shortages, etc.) | Same, parts supply status |
+| `currency` | Quote currency; anything other than `HOME` carries FX risk | Shop quote |
+| `booking_lead_months` | Slot booking lead time (used for decision deadlines) | Scheduling history with the shop |
+| `expedite.fee` / `tat_reduction` | Expedite fee and TAT reduction in months (no key = no expedite) | Shop quote |
+| `volume_commitment.min_visits` / `shortfall_penalty` | Contracted minimum number of visits (take-or-pay) and penalty per missing visit | Framework agreement |
 
 ---
 
-## 3. Mathematical model: two-stage stochastic MILP
+## 4. Mathematical model: two-stage stochastic MILP
 
 This section mirrors the formulation in `shop_mc/model.py`. Money is in k$, time in months.
 
@@ -107,16 +156,18 @@ This section mirrors the formulation in `shop_mc/model.py`. Money is in k$, time
 
 ```
 First stage (decided now, before uncertainty is revealed)
-  x[i] ∈ {0,1}            adopt option i = (engine e, shop k, workscope w, induction month t)
-                           t within the removal window; w allowed and quoted by shop k
+  x[i] ∈ {0,1}            adopt option i = (engine e, shop k, workscope w, induction month t, expedite r)
+                           t within the removal window; w allowed and quoted by shop k;
+                           r = expedite only if the shop offers it
   S    ∈ {0,…,S^max}      long-term spare engines leased for the whole horizon
+  q[k] ≥ 0                shortfall against shop k's contracted volume
 
 Second stage (per scenario s and month t, after costs / delays / removals are known)
-  l[s,t] ∈ [0, l^max]     short-term lease engines
-  a[s,t] ≥ 0              uncovered positions (AOG)
+  l[s,t] ∈ [0, cap_t]     short-term lease engines (cap_t = max_engines_peak in peak months)
+  a[s,t] ≥ 0              uncovered positions (AOG); cost c_aog,t carries the peak multiplier
 ```
 
-Writing `x[e,k,w,t]` below means the same thing as `x[i]`.
+Writing `x[e,k,w,t]` below means the same thing as `x[i]`. The sample has 490 options (196 of them expedited).
 
 ### Scenario-defined parameters
 
@@ -124,13 +175,25 @@ Each Monte Carlo scenario s fixes:
 
 ```
 cost[s,i]   shop visit cost borne by the operator for option i
-            = price[k,w] + transport_cost[k] + overrun_share[k] · price[k,w] · ρ[s,e,k]
+            = ( price[k,w] · (1 + overrun_share[k] · ρ[s,e,k]) + rush_fee[k]·[r_i] ) · FX[s]^[k foreign-currency]
+              + transport_cost[k]
             ρ[s,e,k] = overrun ratio if findings are billed (lognormal), else 0
+            FX[s]    = FX multiplier (mean 1, lognormal σ = fx.volatility), shared by all foreign quotes
 down[s,i]   off-wing months of option i
-            = transport_months[k] + tat[k,w] + shop_delay[s,k] + engine_delay[s,e,k]
+            = transport_months[k] + TAT_i + shop_delay[s,k] + engine_delay[s,e,k]
+            TAT_i = tat[k,w], or max(1, tat[k,w] − tat_reduction[k]) if expedited
 A[s,i,t]    = 1  if  t_i ≤ t < t_i + down[s,i]      (off-wing in month t)
 U[s,t]      engines off-wing from unscheduled removals (Poisson arrivals × duration distribution)
 ```
+
+### First-stage fixed cost
+
+```
+F_i = green_time_value · (latest_e − t_i)   −   V[w_i]
+      life thrown away by removing early        on-wing life the workscope builds
+```
+
+Removing an engine before its limit `latest` throws away that many months of on-wing life. `V[w]` (`workscope_build_value`) gives deeper workscopes larger credits; without it, a 24-month view would always pick the cheapest PR.
 
 ### Constraints
 
@@ -138,25 +201,34 @@ U[s,t]      engines off-wing from unscheduled removals (Poisson arrivals × dura
 (1) each planned visit happens exactly once
     Σ_{i ∈ I(e)} x[i] = 1                                                ∀ e
 
-(2) planned shop capacity (quoted TAT)
-    Σ_{i : k_i = k, t_i ≤ t < t_i + tat[k,w_i]} x[i] ≤ slots[k]         ∀ k, t
+(2) planned shop capacity (quoted TAT, reduced if expedited)
+    Σ_{i : k_i = k, t_i ≤ t < t_i + TAT_i} x[i] ≤ slots[k]              ∀ k, t
 
-(3) position coverage (per scenario and month)
+(3) LLP kits: only the kits on hand can be used before new orders arrive
+    Σ_{i : w_i ∈ LLP WS, t_i < lead_LLP} x[i] ≤ kits_on_hand
+
+(4) fiscal-year budget (expected spend booked in the induction month's fiscal year)
+    Σ_{i : FY(t_i) = y} Ē[cost_i] · x[i] ≤ budget_y                     ∀ y
+    Ē[cost_i] = mean of cost[s,i] over the scenario set being optimized
+
+(5) take-or-pay volume commitments
+    q[k] ≥ min_visits_k − Σ_{i : k_i = k} x[i]                          ∀ k with a commitment
+
+(6) position coverage (per scenario and month)
     owned − Σ_i A[s,i,t] · x[i] − U[s,t] + S + l[s,t] + a[s,t] ≥ D      ∀ s, t
 ```
 
-(2) is a **planning** constraint that reserves shop slots by quoted TAT, excluding shipping and delays. The actual overlaps caused by delays are priced through (3) as spare shortfall (lease and AOG cost).
+(2) is a **planning** constraint that reserves shop slots by quoted TAT, excluding shipping and delays. The actual overlaps caused by delays are priced through (6) as spare shortfall (lease and AOG cost). Because (4) constrains an expectation, its relationship to the budget depends on which scenario set a method optimizes over (this is why "pessimistic P90" turns out infeasible below).
 
 ### Objective (risk-neutral)
 
 ```
-min  c_S · T · S  −  Σ_i V[w_i] · x[i]                                   first stage
+min  c_S · T · S  +  Σ_i F_i · x[i]  +  Σ_k pen_k · q[k]                  first stage
      + (1/N) Σ_s Q_s                                                     sample average of second stage
 
-     Q_s = Σ_i cost[s,i] · x[i]  +  Σ_t ( c_l · l[s,t] + c_aog · a[s,t] )
+     Q_s = Σ_i cost[s,i] · x[i]  +  Σ_t ( c_l · l[s,t] + c_aog,t · a[s,t] )
+     c_aog,t = aog_cost_per_month · aog_peak_multiplier[calendar month(t)]
 ```
-
-`V[w]` is `workscope_build_value`, the on-wing life a workscope leaves beyond the horizon, so deeper workscopes earn larger credits. Without it, a 24-month view would always pick the cheapest PR.
 
 ### CVaR option
 
@@ -165,35 +237,36 @@ With `--cvar-weight λ` (λ > 0), the objective becomes the expectation plus CVa
 ```
 min  E[total cost] + λ · CVaR_α[total cost]
 
-total cost_s = c_S · T · S − Σ_i V[w_i] · x[i]  +  Q_s        (deterministic first stage + scenario cost)
+total cost_s = (first stage: c_S·T·S + Σ_i F_i·x[i] + Σ_k pen_k·q[k])  +  Q_s
 ```
 
 CVaR uses the Rockafellar–Uryasev linearization:
 
 ```
 min  (risk-neutral objective above)  +  λ · ( η + 1/((1−α)N) · Σ_s z[s] )
-s.t. z[s] ≥ c_S · T · S − Σ_i V[w_i] · x[i] + Q_s − η,   z[s] ≥ 0       ∀ s
+s.t. z[s] ≥ first stage + Q_s − η,   z[s] ≥ 0                          ∀ s
      (η free = estimate of VaR_α, α = --cvar-alpha, default 0.9)
 ```
 
-The first-stage long-term spare cost and build value are identical in every scenario, but including them inside the CVaR means the spare cost is also weighted by λ. The model therefore optimizes the same "CVaR of total cost" that the out-of-sample CVaR90 measures.
+The first-stage terms are identical in every scenario, but including them inside the CVaR also weights them by λ. The model therefore optimizes the same "CVaR of total cost" that the out-of-sample CVaR90 measures.
 
 ### Problem size (sample data)
 
-294 first-stage options (binary) plus integer `S`. With N = 200 scenarios over 24 months, the second stage has 9,600 continuous variables and 4,800 coverage constraints.
+490 first-stage options (binary) plus integer `S` and shortfall `q`. With N = 200 scenarios over 24 months, the second stage has 9,600 continuous variables and 4,800 coverage constraints.
 
 ---
 
-## 4. Computational pipeline
+## 5. Computational pipeline
 
 ```
-1. Monte Carlo          sample N scenarios (overruns, delays, unscheduled removals)  scenarios.sample
-2. SAA                  solve the two-stage stochastic MILP (default N = 200)        model.solve_saa
-3. EV plan              solve the mean-value deterministic problem (benchmark)       scenarios.mean_value
-4. Out-of-sample eval   evaluate both plans on independent scenarios (default 5,000) evaluate.evaluate
-                        → mean, P50/P90, CVaR90, AOG probability, VSS = EV − SAA
-5. Gap estimate         optimality gap from M independent SAA lower bounds and       evaluate.saa_gap
+1. Monte Carlo          sample N scenarios (overruns, delays, FX, unscheduled removals)  scenarios.sample
+2. SAA                  solve the two-stage stochastic MILP (default N = 200)            model.solve_saa
+3. EV plan              solve the mean-value deterministic problem (benchmark)           scenarios.mean_value
+4. Out-of-sample eval   evaluate both plans on independent scenarios (default 5,000)     evaluate.evaluate
+                        → mean, P50/P90, CVaR90, disruption probability, VSS = EV − SAA
+5. Gap estimate         optimality gap from M independent SAA lower bounds and           evaluate.saa_gap
                         the out-of-sample value (upper bound)
+6. Deadlines            decision deadlines and cost-of-timing curves per plan            urgency.analyse
 ```
 
 The **EV plan** solves a single deterministic scenario built from the average of 20,000 scenarios (off-wing months rounded to whole months, unscheduled removals as a fractional steady-state average). It corresponds to the traditional "plan with averages" approach; its gap to the SAA plan is the **VSS** (Value of the Stochastic Solution).
@@ -202,11 +275,13 @@ For **out-of-sample evaluation**, once the first stage (x, S) is fixed the secon
 
 ```
 shortfall[s,t] = max(0, D − (owned − Σ_i A[s,i,t] x[i] − U[s,t] + S))
-l[s,t]         = min(shortfall[s,t], l^max)
+l[s,t]         = min(shortfall[s,t], cap_t)
 a[s,t]         = shortfall[s,t] − l[s,t]
+total_s        = first stage (long-term spares, F_i, volume shortfall penalties) + Σ_i cost[s,i] x[i]
+                 + Σ_t ( c_l · l[s,t] + c_aog,t · a[s,t] )
 ```
 
-Evaluation needs no MILP, only NumPy vector operations, so thousands of scenarios take tens of milliseconds.
+Evaluation needs no MILP, only NumPy vector operations, so thousands of scenarios are fast. Disruption probability is the share of scenarios in which `a[s,t] > 0` in at least one month.
 
 The **optimality gap** follows Mak–Morton–Wood:
 
@@ -222,28 +297,28 @@ The expected SAA optimal value is no greater than the true optimum (downward bia
 
 Here, Monte Carlo is used for **scenario generation** and **plan evaluation**. The MILP solver is what searches for the plan.
 
-- "Generate random candidate plans, simulate each, keep the best" cannot meaningfully search the combinations of 294 options and spare counts, and gives no optimality guarantee.
-- SAA uses a MILP to optimize **one plan** that must perform across all scenarios at once. Tail correlations, such as overlapping visits coinciding with delays, act directly through constraint (3).
+- "Generate random candidate plans, simulate each, keep the best" cannot meaningfully search the combinations of 490 options and spare counts, and guarantees neither budget / LLP-kit feasibility nor optimality.
+- SAA uses a MILP to optimize **one plan** that must perform across all scenarios at once. Tail correlations, such as overlapping visits coinciding with delays, act directly through constraint (6).
 - Evaluating on the same scenarios used for optimization is optimistically biased (optimization bias). So evaluation uses **independent** scenarios, and the gap estimate checks whether the scenario count is sufficient.
 
 ---
 
-## 5. Example results
+## 6. Example results
 
 <Aside type="note" title="Example with synthetic data">
-  Synthetic data, seed=42, 5,000 evaluation scenarios, in k$. Not actual figures from any real shop or fleet.
+  Synthetic data, seed=42, 5,000 evaluation scenarios, in k$ (net of the on-wing life built by workscopes and the life thrown away by early removal). Not actual figures from any real shop or fleet.
 </Aside>
 
-| Plan | Mean | P90 | CVaR90 | Disruption probability | Long-term spares |
+| Plan | Mean | P90 | CVaR90 | Disruption probability | Decide now |
 |---|---:|---:|---:|---:|---:|
-| Quotes at face value (deterministic) | 38,345 | 43,473 | 46,599 | 47.5% | 0 |
-| Expected value (EV, deterministic) | 36,174 | 39,649 | 42,010 | 14.4% | 1 |
-| Pessimistic P90 (deterministic) | 39,687 | 39,950 | 40,466 | **0.5%** | 2 |
-| SAA risk-neutral | **35,869** | 38,592 | 40,552 | 7.6% | 1 |
-| SAA + CVaR λ=0.3 | 36,074 | 38,471 | 40,168 | 7.6% | 1 |
-| SAA + CVaR λ=1 (λ=3 gives the same plan) | 36,304 | **38,449** | **39,994** | 6.6% | 1 |
+| Quotes at face value (deterministic) | 34,873 | 42,135 | 45,684 | 20.2% | 2 engines |
+| Expected value (EV, deterministic) | 33,808 | 39,467 | 42,166 | 9.4% | 1 engine |
+| Pessimistic P90 (deterministic) | — | — | — | — | infeasible |
+| SAA risk-neutral | **33,793** | 39,346 | 42,042 | 8.0% | 2 engines |
+| SAA + CVaR λ=0.3 | 33,975 | 39,075 | 41,395 | 7.1% | 2 engines |
+| SAA + CVaR λ=1 (λ=3 gives the same plan) | 34,843 | **38,291** | **40,056** | **5.3%** | 1 engine |
 
-"Disruption probability" is the share of scenarios with at least one month of AOG (an unfilled engine position) during the horizon. The three deterministic models are each solved on a single scenario:
+The three deterministic models are each solved on a single scenario:
 
 - **Quotes at face value**: quoted price and TAT as stated; findings overrun, delays and unscheduled removals all set to zero
 - **Expected value (EV)**: the mean over 20,000 scenarios
@@ -251,18 +326,21 @@ Here, Monte Carlo is used for **scenario generation** and **plan evaluation**. T
 
 What the results show:
 
-- Taking quotes at face value leads to a disruption probability of about 50%. Quotes must be treated as "price + risk distribution".
-- The value of the stochastic solution (VSS) is **about 305 k$**. Planning with averages underestimates overlapping visits coinciding with delays, and roughly doubles the disruption probability.
-- The risk-neutral SAA sends one FULL visit to the **fixed-price OEM shop**. The quote is about 1,000 k$ higher, but its stable TAT lowers the risk of cancellations in months when visits overlap.
-- Adding CVaR raises the mean by a few hundred k$ and in exchange lowers P90, CVaR90 and disruption probability (the improvement holds out of sample).
-- The pessimistic plan almost eliminates disruptions but costs about 3,800 k$ more on average. It is also a legitimate choice when disruptions must be avoided at all costs, and it is Pareto-optimal.
-- Which plan is "right" depends on how management weighs cost against disruption risk. `compare.py`, described next, supports that decision.
+- Taking quotes at face value gives about 2.5 times the disruption probability of the stochastic plan. Quotes must be treated as "price + risk distribution".
+- With every cost at its P90, no plan satisfies the fiscal-year budgets, LLP kits and shop slots at the same time. This signals that the budget is sufficient only "on average".
+- Under the budget constraint, the stochastic plan pushes the FULL visit into the new fiscal year (April) and assigns the 2 LLP kits on hand to the early inductions.
+- Strengthening CVaR raises the mean by about 1,000 k$, lowers disruption probability from 8.0% to 5.3%, and lowers P90 and CVaR90 as well.
+- The sample's assumptions (about 10% spares, 2 lease engines available in peak season, etc.) drive the results strongly. Calibrate with real data before use.
+
+<Aside type="caution" title="On calibration">
+  The figures above depend strongly on synthetic values such as the spare ratio, AOG cost, peak multipliers and findings probabilities; both the level of disruption probability and the ranking of methods can change with the assumptions. For real use, calibrate the inputs with your own reliability data, invoice history and budgets, and check that the assumptions are plausible in the input-distribution panel described below.
+</Aside>
 
 ---
 
-## 6. Comparing methods in parallel and choosing (`compare.py`)
+## 7. Comparing methods in parallel and choosing (`compare.py`)
 
-`compare.py` solves the 7 methods in the table above (quotes at face value, expected value, pessimistic P90, risk-neutral SAA, CVaR λ = 0.3 / 1 / 3) **in a process pool** and evaluates every plan on **the same evaluation sample** (5,000 scenarios by default). On the sample data this takes about 45 seconds with 4 workers (about 170 seconds sequentially).
+`compare.py` solves the 7 methods in the table above (quotes at face value, expected value, pessimistic P90, risk-neutral SAA, CVaR λ = 0.3 / 1 / 3) **in a process pool**, evaluates every plan on **the same evaluation sample** (5,000 scenarios by default), and runs the deadline analysis for each feasible plan in parallel as well (a few tens of seconds with 4 workers on the sample).
 
 ```bash
 python compare.py                  # solve 7 methods in parallel; write compare.json and compare.html
@@ -273,6 +351,7 @@ python compare.py --workers 8
 |---|---|---|
 | `--workers N` | CPU cores | Parallel workers |
 | `--scenarios N` / `--eval-scenarios N` | `200` / `5000` | SAA scenarios / common evaluation scenarios |
+| `--urgency-scenarios N` | `2000` | Scenarios for the cost-of-timing curves |
 | `--time-limit SEC` | `300` | MILP time limit per method [s] |
 | `--json-out` / `--html-out` | `compare.json` / `compare.html` | Output paths |
 | `--fragment` | — | Emit an HTML fragment without `<html>`/`<head>` |
@@ -282,7 +361,7 @@ python compare.py --workers 8
           ├── Expected value (EV) ───┤
           ├── Pessimistic P90 ───────┤   ProcessPoolExecutor
  data ────┼── SAA risk-neutral ──────┼── (one HiGHS thread per worker)
-          ├── CVaR λ=0.3 ────────────┤
+          ├── CVaR λ=0.3 ────────────┤   infeasible methods are recorded as such
           ├── CVaR λ=1 ──────────────┤
           └── CVaR λ=3 ──────────────┘
                        │
@@ -290,26 +369,27 @@ python compare.py --workers 8
    evaluate all plans on one common sample of 5,000 scenarios (closed-form recourse)
                        │
                        ▼
-   Pareto set → compare.json + compare.html (chooser)
+   deadline analysis per plan (parallel) → Pareto set → compare.json + compare.html
 ```
 
 ### Pareto set
 
-Plans are compared on three metrics, all minimized: **mean cost, disruption probability and CVaR90**. A plan is Pareto-optimal if no other plan is at least as good on all three and strictly better on at least one. Because every plan is evaluated on the same scenarios, differences in the metrics reflect differences between the plans themselves. Methods that produce identical plans (e.g. λ=1 and λ=3) are flagged as such.
+Feasible plans are compared on three metrics, all minimized: **mean cost, disruption probability and CVaR90**. A plan is Pareto-optimal if no other plan is at least as good on all three and strictly better on at least one. Because every plan is evaluated on the same scenarios, differences in the metrics reflect differences between the plans themselves. Methods that produce identical plans (e.g. λ=1 and λ=3) are flagged as such.
 
 ### The chooser (`compare.html`)
 
-A single self-contained HTML file with no external dependencies, showing:
+A single self-contained HTML file with no external dependencies, laid out top to bottom as "should we hurry?", "which plan?", "does it fit the company's constraints?" and "are the assumed uncertainties plausible?":
 
-- a **"Keep cost down ↔ Avoid disruptions" slider** (with "cost first", "balanced" and "avoid disruptions first" presets)
-- a cost × disruption-probability scatter plot with the Pareto front
-- the total-cost distribution of the selected plan (histogram against the EV plan) and its induction schedule (colored by shop, showing expected off-wing time and the range up to P90)
-- a comparison table of all methods
+1. **Should we hurry?** — for the selected plan: the number of engines to decide this month, each engine's decision deadline (and the binding lead time), the cost of hurrying or waiting, and the cost-of-timing curve per induction month (peak months shaded; months blocked by a constraint marked × with the constraint's name)
+2. **Which plan?** — a "Keep cost down ↔ Avoid disruptions" slider (with "cost first", "balanced" and "avoid disruptions first" presets), a cost × disruption-probability scatter plot with the Pareto front, and the selected plan's total-cost distribution (histogram against the EV plan)
+3. **Company constraints** — budget consumption per fiscal year (expected spend ÷ budget), LLP kits (used within the lead time / on hand, and kits to order), minimum-volume achievement and penalties, on-wing life thrown away by early removal (months and value), and expedite count; plus the induction schedule (colored by shop, expected off-wing time and range up to P90, with peak months and fiscal-year boundaries)
+4. **Input distributions** — next section
+5. **Comparison table of all methods** — infeasible methods are shown too
 
 The slider's recommendation is computed as follows, where the weight w ∈ [0, 1] is the slider position (0 at the left, 1 at the right):
 
 ```
-norm(v) = (v − min) / (max − min)        min, max over all candidates (the 7 methods)
+norm(v) = (v − min) / (max − min)        min, max over all feasible candidates
 
 score(m) = (1 − w) · norm(mean cost_m) + w · norm(disruption probability_m)
 
@@ -318,13 +398,25 @@ recommendation = argmin score(m)   over Pareto-optimal plans m only
 
 Mean cost (k$) and disruption probability (%) have different units, so each is normalized to its relative position among the candidates before weighting. A plan that is not Pareto-optimal is never recommended, whatever the weight. The planner can also pick a plan directly from the table or charts; moving the slider returns to the recommendation.
 
+### Input distribution panel
+
+This panel shows 20,000 draws from the same random model used for the scenarios, so planners can see that quotes are treated as "price plus this distribution" rather than a single price (`scenarios.input_distributions`).
+
+| Panel | Content |
+|---|---|
+| **Quote overrun (per shop)** | Operator-borne overrun (after `overrun_share`, as a fraction of the quote): share with no overrun, mean, P90, and a histogram of the overrun when there is one |
+| **TAT delay (per shop)** | Distribution of delay months, combining congestion and engine-specific delay |
+| **FX** | Histogram of the home-currency multiplier for foreign-currency quotes, with P10–P90 |
+| **Unscheduled removals** | Distribution of the fleet-wide count over 24 months (Poisson from MTBUR); each one takes an engine away for 2–4 months |
+| **Seasonality of AOG cost** | AOG cost per month (with peak multipliers) and the short-term lease cap in each month |
+
 <Aside type="tip" title="How this fits the SDK">
-  With the WorkWithAGI SDK, the intended use is: an agent runs `compare.py` inside the sandbox created by `createSession` to generate the HTML, and the application shows the chooser on the planner's screen. `--fragment` outputs a fragment without `<html>`/`<head>`, which is easier to embed in an existing page. The agent lays out and evaluates the candidate methods; **the planner sets the weight with the slider and chooses the plan**.
+  With the WorkWithAGI SDK, the intended use is: an agent runs `compare.py` inside the sandbox created by `createSession` to generate the HTML, and the application shows the chooser on the planner's screen. `--fragment` outputs a fragment without `<html>`/`<head>`, which is easier to embed in an existing page. The agent lays out and evaluates the candidate methods; **when to decide and which plan to adopt remain the planner's call**.
 </Aside>
 
 ---
 
-## 7. How to run
+## 8. How to run
 
 <Steps>
 
@@ -350,11 +442,19 @@ Mean cost (k$) and disruption probability (%) have different units, so each is n
    python -m unittest discover -s tests
    ```
 
+4. Generate the parallel comparison of 7 methods and the chooser.
+
+   ```bash
+   python compare.py --workers 4
+   ```
+
 </Steps>
+
+`run.py` options:
 
 | Option | Default | Description |
 |---|---|---|
-| `--fleet PATH` | `data/fleet_visits.json` | Fleet and planned visits |
+| `--fleet PATH` | `data/fleet_visits.json` | Fleet, planned visits and company constraints |
 | `--shops PATH` | `data/shop_quotes.json` | Shop quotes and risk profiles |
 | `--scenarios N` | `200` | Scenarios used by SAA |
 | `--eval-scenarios N` | `5000` | Out-of-sample evaluation scenarios |
@@ -364,7 +464,9 @@ Mean cost (k$) and disruption probability (%) have different units, so each is n
 | `--seed` | `42` | Random seed |
 | `--threads N` | — | HiGHS parallel threads |
 | `--time-limit SEC` | `120` | Time limit per MILP [s] |
-| `--json-out PATH` | — | Save metrics, the SAA plan (shop, workscope, month) and long-term spare count as JSON |
+| `--json-out PATH` | — | Save metrics, the SAA plan (shop, workscope, month, expedite) and long-term spare count as JSON |
+
+If no plan satisfies the budgets, LLP kits and shop slots at the same time, `solve_saa` raises `InfeasibleError` (with a message pointing at budgets, LLP kits on hand and shop slots). `compare.py` keeps such a method in the table as "infeasible".
 
 ### Running through the SDK
 
@@ -378,16 +480,17 @@ An example that puts the shop quote PDFs and contracts into the knowledge base, 
   const endpoint = "https://api.workwithagi.dev";
   const apiKey = import.meta.env.VITE_AGI_KEY;
 
-  // 1) Quotes, contracts and history into the knowledge base
+  // 1) Quotes, contracts, history and budgets into the knowledge base
   const kb = new KnowledgeClient(endpoint, apiKey);
   await kb.upload(inHouseQuotePdf, "quote-in-house");
   await kb.upload(oemQuotePdf, "quote-oem-net");
   await kb.upload(indMroQuotePdf, "quote-ind-mro");
   await kb.upload(overrunHistoryCsv, "findings-overrun-history");
+  await kb.upload(budgetPlanXlsx, "mro-budget-by-fy");
 
-  // 2) Retrieve excerpts on contract type and overrun terms
+  // 2) Retrieve excerpts on contract type, overrun terms, booking and volume commitments
   const terms = await kb.context(
-    "quoted price, TAT and overrun cost terms (T&M, fixed price, cap) for each shop",
+    "quoted price, currency, TAT, overrun terms, slot booking lead time, expedite fee and minimum volume for each shop",
     10,
   );
 
@@ -400,9 +503,11 @@ An example that puts the shop quote PDFs and contracts into the knowledge base, 
     prompt: [
       "cd examples/engine-shop-selection-mc && pip install -r requirements.txt",
       "Create my_quotes.json in the same format as data/shop_quotes.json from the excerpts below.",
-      "Derive overrun_share from contract terms and findings/delay from history; record your reasoning in notes.md.",
-      "Then run python run.py --shops my_quotes.json --replications 5 --json-out plan.json",
-      "and summarize the VSS against the EV plan and the optimality gap.",
+      "Derive overrun_share, booking_lead_months, expedite and volume_commitment from contract terms,",
+      "and findings/delay from history; record your reasoning in notes.md.",
+      "Then run python run.py --shops my_quotes.json --replications 5 --json-out plan.json and",
+      "python compare.py --shops my_quotes.json --workers 4 --fragment,",
+      "and summarize which engines must be decided this month and the VSS against the EV plan.",
       "--- excerpts ---",
       terms.context,
     ].join("\n"),
@@ -423,6 +528,7 @@ An example that puts the shop quote PDFs and contracts into the knowledge base, 
   <TabItem label="Python (direct)">
   ```python
   from shop_mc import evaluate, load, mean_value, sample, solve_saa
+  from shop_mc.urgency import analyse
 
   p = load("data/fleet_visits.json", "data/shop_quotes.json")
   saa = solve_saa(p, sample(p, 200, seed=42))
@@ -431,22 +537,26 @@ An example that puts the shop quote PDFs and contracts into the knowledge base, 
   sc_out = sample(p, 5000, seed=42 + 999)
   e_saa, e_ev = evaluate(p, saa, sc_out), evaluate(p, ev_plan, sc_out)
   print("VSS:", e_ev.mean - e_saa.mean, "k$")
+
+  u = analyse(p, saa, sample(p, 2000, seed=42 + 999))
+  for e in u["engines"]:
+      print(e["esn"], e["status"], e["deadline_label"], e["binding_lead"])
   ```
   </TabItem>
 </Tabs>
 
 <Aside type="caution">
-  Extracting `overrun_share` and findings distributions from quotes involves interpreting contracts. Always have procurement and contracts staff review the agent's output.
+  Extracting `overrun_share`, findings distributions and booking lead times from quotes involves interpreting contracts. Always have procurement and contracts staff review the agent's output.
 </Aside>
 
 ---
 
-## 8. Extensions
+## 9. Extensions
 
 | Extension | Summary |
 |---|---|
 | **Connect to part 1** | Feed the integrated plan from [part 1](/en/showcase/engine-mro-optimization/) into `window` / `allowed_workscopes` / `workscope_build_value`, deciding "when and what" and "where" hierarchically |
-| **Multi-stage (rolling) re-optimization** | Re-optimize remaining visits as information arrives, e.g. firm quotes after teardown inspection |
+| **Multi-stage (rolling) re-optimization** | Re-optimize remaining visits as information arrives, e.g. firm quotes after teardown inspection; engines whose deadline lies ahead can be decided in these later runs |
 | **L-shaped method (Benders decomposition)** | Split the second stage into per-scenario subproblems to scale the scenario count; also helps tail estimation for CVaR |
 | **Uncertain shop slots and shipping** | Make shop capacity itself uncertain (congestion from other customers) and model shipping lead time as a distribution |
 
