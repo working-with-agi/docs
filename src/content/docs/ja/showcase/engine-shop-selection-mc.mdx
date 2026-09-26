@@ -1,568 +1,318 @@
 ---
-title: 工場見積もり比較と不確実性下の入場計画
-description: 複数工場の見積もりを「価格 ＋ リスク分布」として比較し、判断期限・予算・LLP キット・契約条件のもとで、モンテカルロと SAA による二段階確率 MILP で工場・ワークスコープ・入場月・予備エンジンを決めるショーケース
+title: 航空エンジン整備計画を AI エージェントで回す
+description: 見積書・マニュアル・信頼性データをナレッジに集め、サンドボックス内のエージェントが計画を並列に解き、報告書と判断ルームで計画担当者と経営層の判断を支える。WorkWithAGI SDK の使い方を、年間計画・月次判断・工場選定・資産戦略・リスク対応の 5 つの業務ユースケースで示すショーケース
 ---
 
-import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
 
-<Aside type="tip" title="第2弾">
-  本ページは [航空エンジン整備計画の最適化](/ja/showcase/engine-mro-optimization/) の第2弾です。第1弾が「いつ・どのワークスコープで」を確定的に決めるのに対し、本ページでは **どの工場に出すか** を、費用超過・TAT 遅延・為替・非計画取卸しの不確実性のもとで決めます。
-</Aside>
+航空会社のエンジン整備計画は、毎月「どのエンジンを、いつ、どの工場に、どこまで直して出すか」を決め続ける仕事です。判断材料は見積書、ショップマニュアル、契約書、信頼性データ、予算と、あちこちに散らばっています。本ショーケースでは、**WorkWithAGI SDK を使って、この計画業務を AI エージェントに回させる** 構成を、業務ユースケースごとに紹介します。
 
-エンジンのショップビジットを外部工場に出すとき、見積書の価格だけを比べても最適な発注先は決まりません。分解してみないと分からない不具合（findings）による追加費用を誰が負担するか、TAT がどれだけぶれるか、外貨建てなら為替がどう動くか、その間に別のエンジンが故障したら予備エンジンは足りるか。加えて、年度予算、手持ちの LLP キット、工場との最低発注量契約といった会社の制約もあります。本ショーケースでは、これらを**モンテカルロで生成したシナリオ上の二段階確率 MILP** として解き、次を同時に決めます。
-
-- 各入場予定エンジンの **工場・ワークスコープ・入場月・特急対応の有無**
-- 計画期間を通じて長期リースする **予備エンジン台数**
-
-そのうえで、実務で最初に問われる **「今、決めなければならないエンジンはどれか」** に答えます。
+計算そのもの（確率計画・モンテカルロ）は SDK リポジトリのサンプルにある Python スクリプトが担います。SDK が担うのは、その周りの **データを集める → エージェントが解く → 結果を人に見せて判断してもらう → 次の月にまた回す** という流れです。
 
 <Aside type="caution" title="データについて">
-  本ページで使う見積もり・リスク特性・フリート構成・予算はすべて**説明用の合成値**です。OEM や実在する工場の見積もりではありません。結果は前提（予備エンジン比率、繁忙期のリース枠など）に大きく依存するため、実データで較正してから使ってください。
+  本ページの数値はすべて、SDK リポジトリのサンプル（`examples/engine-shop-selection-mc/`）を **合成データ** で実行した例です（737-800 相当 62 機・装着 124 基・保有 136 基・2 年間の入場予定 44 件、単位 k$）。OEM や実在する工場・航空会社の見積もりや実績ではありません。結果は前提に強く依存するため、実データで較正してから使ってください。
 </Aside>
 
+---
+
+## 計画担当者・経営層が得るもの
+
 <CardGrid>
-  <Card title="経営層向け" icon="rocket">
-    「最安見積もり」ではなく、**期待コスト・P90・欠航確率** で工場を比べます。今月決めるべきエンジンと、急いだ／待った場合のコスト差も示します。
+  <Card title="今月決めることの一覧" icon="warning">
+    毎月の実行で、**今月決めなければ間に合わないエンジン** と、その理由（工場の枠予約・LLP キットの調達リードタイム）、急いだ／待った場合のコスト差が出ます。
   </Card>
-  <Card title="研究者向け" icon="open-book">
-    SAA、共通乱数法、期待値問題との比較、閉形式リコースによるサンプル外評価、Mak–Morton–Wood 型の最適性ギャップ推定、7 手法の並列比較とパレート集合まで扱います。
+  <Card title="結論つきの報告書" icon="document">
+    要望（欠航確率目標、予備バッファ、年度予算、最低発注量など）はすべては満たせません。優先順位に沿って **推奨案・今決めること・承認事項** を結論として書いた報告書（`report.html`）を出します。
   </Card>
-  <Card title="アーキテクト向け" icon="puzzle">
-    工場見積書 PDF を `KnowledgeClient` に取り込み、エージェントが JSON 化して `run.py` / `compare.py` を実行するパイプラインを示します。
+  <Card title="判断ルーム" icon="approve-check">
+    決めるべき項目ごとに **承認／保留／差し戻し** を共有し、横の AI パネルに「E-104 を来月に回したら？」と分析結果について質問できる画面（`room.html`）です。
   </Card>
-  <Card title="ソースコード" icon="github">
-    SDK リポジトリの `examples/engine-shop-selection-mc/`（Python + PuLP + HiGHS + NumPy）にあります。
+  <Card title="並列の what-if" icon="random">
+    「MRO が混んだら」「LLP キットが逼迫したら」「中寿命エンジンが安く買えたら」を **複数のエージェントセッションで並列に** 解き、同じ評価シナリオで比べます。
   </Card>
 </CardGrid>
 
 ---
 
-## 1. 課題: 見積もりは「価格 ＋ リスク分布」
-
-同じワークスコープでも、工場によって契約形態とリスク特性が違います。
-
-| 工場（サンプル） | 契約形態 | `overrun_share` | 通貨 | 特徴 |
-|---|---|---:|---|---|
-| `IN-HOUSE` 自社工場 | T&M（実費精算） | 1.0 | 本国通貨 | 輸送なし・枠 1・枠予約 1 か月前。findings の超過分は全額自社負担。特急あり |
-| `OEM-NET` OEM ネットワーク工場 | 固定価格 | 0.0 | USD | 見積もりは高めだが超過なし、遅延も小さい。輸送 1 か月・枠 2・枠予約 4 か月前。特急あり。最低 2 件の発注契約 |
-| `IND-MRO` 独立系 MRO | 上限付き T&M（50% 負担） | 0.5 | USD | 見積もりは最安だが TAT が長く、混雑遅延のばらつきが大きい。枠予約 2 か月前 |
-
-`overrun_share` は「findings による費用超過のうち自社が負担する割合」で、契約形態を 1 つの数値で表します。T&M なら 1、固定価格なら 0、上限付き T&M や超過分の折半ならその中間です。見積価格の差は、この負担割合・遅延分布・為替リスクを合わせて初めて比較できます。
-
-さらに、工場ごとの判断は互いに独立ではありません。
-
-- 入場が重なる月に複数工場で遅延が同時に起きると、予備エンジンが足りず **AOG**（機体の地上待機、欠航）になる。繁忙期ならその損失はさらに大きい。
-- その間に **非計画取卸し**（鳥衝突、FOD、ボアスコープ所見など）が起きれば、さらに不足する。
-- 予備エンジンを長期リースで事前確保するか、不足時に短期リースで対応するかも、工場選択と一緒に決める必要がある。
-- 年度予算、手持ちの LLP キット、工場との最低発注量契約が、選べる組合せを制限する。
-
-### 共通乱数法
-
-findings の有無はエンジンの状態に由来する性質であり、どの工場に出しても同じはずです。そこで同じシナリオでは **全工場に同じ乱数** を使います（共通乱数法）。工場間の違いは「その findings が請求される確率」（`findings.prob`）、「超過率の分布」、「誰が払うか」（`overrun_share`）にだけ現れます。こうすることで、工場比較の差分がサンプリング誤差に埋もれにくくなります。混雑遅延（`delay.shop_*`）は同じシナリオ内で同じ工場に入った全エンジンに共通にかかり、為替は 1 シナリオにつき 1 本の経路をすべての外貨建て見積もりで共有します。
-
----
-
-## 2. 急ぐべきか（判断期限）
-
-計画を選ぶ前に、実務でまず問われるのは **「今、決めなければならないエンジンはどれか」** です。`shop_mc/urgency.py` は、ある計画について各エンジンの次の値を出します。
+## 構成：SDK のどの部品を使うか
 
 ```
-判断期限 = 計画上の入場月 − 最も長いリードタイム
-
-  リードタイムの候補
-    工場の枠予約       選んだ工場の booking_lead_months
-    LLP キット発注     LLP キットを使うワークスコープで、かつ手持ちキットが
-                       より早い入場に割り当て済みの場合のみ llp_kits.lead_time_months
-                       （手持ちキットは入場月の早い順に割り当てる）
-
-判定
-  期限 ≤ 0 か月後  → 「今月決める」
-  期限 ≤ 3 か月後  → 「3 か月以内」
-  それ以外          → 「待てる」
+ ① ナレッジ                       ② エージェント（サンドボックス）          ③ 出力
+ ─────────────────────────       ─────────────────────────────────         ──────────────────────
+ KnowledgeClient                  AgiApiClient.createSession               報告書 report.html
+   upload()  見積書 PDF・契約書   ─►  planner  : データ整形、計算の実行    ─►   （結論・承認事項）
+   upload()  ショップマニュアル        addPane({ role: "reviewer" })             判断ルーム room.html
+   upload()  信頼性データ CSV          reviewer : 前提と契約解釈の点検          （承認共有＋AI 相談）
+   connect() SharePoint / Drive       並列：what-if ごとに別セッション         選択画面 compare.html
+             （schedule で定期同期）   Promise.all([createSession, ...])        （手法の比較）
+   context() 抜粋をプロンプトへ                                                WorkAGI.terminal で
+                                                                              作業の様子を埋め込み
+          ▲                                                                          │
+          │                                                                          ▼
+ ④ きっかけ（トリガー）  ─────────────────────────────────────────────────────────────────
+   月次の定期実行（毎月 1 日）  ／  会議メモのイベント（Secretary.io で「E-104 の分解所見が出た」）
+   ／ 見積書の差し替え（ナレッジ同期）                                   → ② をもう一度回す
 ```
 
-**入場月ごとの期待総コスト曲線** は、そのエンジンだけを取卸し可能期間内の各月に動かし（他のエンジンは固定）、その月で選べる工場・ワークスコープ・特急の中から期待総コストが最小のものを選び直して評価した値です。工場枠・LLP キット・年度予算のどれかを破る選択肢は除外し、その月に選択肢が 1 つも残らなければ **どの制約に阻まれたか**（「工場枠」「LLP キット」「FY2027 予算」など）を記録します。
-
-```
-急いだ場合のコスト = 曲線上の最も早い入場可能月の期待総コスト − 計画の期待総コスト
-待った場合のコスト = 曲線上の最も遅い入場可能月の期待総コスト − 計画の期待総コスト
-```
-
-曲線の評価には共通評価シナリオ（既定 2,000 本、`--urgency-scenarios`）を使います。
-
-サンプルでは、確率計画の場合、E-901・E-902 が「今月決める」、E-904（OEM の枠予約 4 か月）と E-906（LLP キット発注 8 か月）が「3 か月以内」になります。判断期限が先のエンジンは、見積もりの更新や分解検査の結果を待ってから決めても間に合う、ということです。
-
----
-
-## 3. 入力データ
-
-### `data/fleet_visits.json` — フリート・入場予定・会社の制約
-
-合成サンプルは 10 機のナローボディ機（装着位置 20、保有エンジン 22 基 ＝ 予備比率 約 10%）で、2026 年 10 月から 24 か月間に 10 件の入場予定があります。金額は今日の為替レートでの本国通貨換算 k$ です。
-
-| キー | 意味 | 実務でのデータ源 |
+| 部品 | 状態 | 使い方 |
 |---|---|---|
-| `start` | 計画開始の暦月（例 `2026-10`）。年度・繁忙期の判定に使う | 計画サイクル |
-| `horizon_months` | 計画期間 [月] | 計画サイクル |
-| `installed_positions` | 常に埋める必要のある装着位置数 D | 機材計画（機数 × エンジン数） |
-| `owned_engines` | 保有エンジン数（装着分 ＋ 自社予備） | 資産台帳 |
-| `short_term_lease.cost_per_month` / `max_engines` | 短期リース（事後判断）の単価・上限 | リース会社見積もり、市場在庫 |
-| `short_term_lease.max_engines_peak` | 繁忙期に借りられる短期リース台数 | リース市況 |
-| `long_term_spare.cost_per_month` / `max_engines` | 長期リース予備（事前判断）の単価・上限 | リース会社見積もり |
-| `aog_cost_per_month` | 装着位置が埋まらない損失 [k$/月] | 運航収益、代替機手配費 |
-| `aog_peak_multiplier` | 暦月（1〜12）ごとの欠航コスト倍率（繁忙期） | 運航計画、需要予測 |
-| `unscheduled_removals.rate_per_engine_month` | 非計画取卸し率（1/MTBUR） | 自社信頼性データ |
-| `unscheduled_removals.tat_months` / `tat_probs` | 非計画取卸しの off-wing 月数の分布 | 過去の修理実績 |
-| `workscope_build_value` | ワークスコープが生む、計画期間後の搭載寿命の価値 | 第1弾モデルの期末価値、社内評価 |
-| `green_time_value_per_month` | 取卸し期限前に外すことで捨てる搭載寿命 1 か月の価値（エンジン別に上書き可） | 整備費 ÷ 搭載期間、リース料相当 |
-| `llp_kits.workscopes` | LLP キットを使うワークスコープ | WSPG |
-| `llp_kits.lead_time_months` / `on_hand` | LLP キットの調達リードタイムと手持ち数 | 調達部門・OEM 納期 |
-| `budget.fiscal_year_start_month` / `by_fiscal_year` | 年度開始月と年度別の整備予算（入場月の年度で期待費用を計上） | 予算計画 |
-| `fx.volatility` | 外貨建て見積もりの為替変動（計画期間の対数正規 σ） | 為替オプションのインプライド・ボラティリティ等 |
-| `engines[].esn` | エンジンシリアル番号 | 資産台帳 |
-| `engines[].window` | 取卸し可能期間 [最早, 最遅] 月。最遅は LLP 寿命・EGT マージン・AD による絶対期限 | EGT トレンド予測・LLP 残寿命から算出（第1弾の出力でもよい） |
-| `engines[].allowed_workscopes` | 状態上許容されるワークスコープ | WSPG、LLP 状況、AD/SB |
+| `KnowledgeClient.upload / search / context` | **SDK にある** | 見積書・マニュアル・信頼性データを取り込み、契約条件や TAT の抜粋をプロンプトに渡す |
+| `KnowledgeClient.connect / sync`（`schedule` 付き） | **SDK にある** | SharePoint・Google Drive などの見積書フォルダを定期同期する |
+| `AgiApiClient.createSession / addPane / destroySession` | **SDK にある** | サンドボックスでエージェントを起動し、planner と reviewer の役割ペインを並べる |
+| `WorkAGI.api / terminal / connect` | **SDK にある** | API クライアントの作成、作業ターミナルの画面埋め込み、ヘッドレス接続 |
+| 報告書・選択画面・判断ルームの HTML | **サンプルにある** | `decide.py` / `compare.py` / `build_room.py` がサンドボックス内で生成する 1 ファイルの HTML |
+| オブジェクトストレージ（計画と入力の版管理） | *提案* | 月ごとの計画・前提を版として残し、「先月からの差分」を出す |
+| 計算ジョブの実行基盤 | *提案* | 数十分かかる並列求解をセッションの外で走らせ、終わったら通知する |
+| MCP ツール（計画の照会・承認の書き込み） | *提案* | 判断ルームの AI パネルや他のエージェントから計画を問い合わせる |
+| 定期実行・通知（Slack・カレンダー）・会議メモのイベント | *提案* | 月次実行と Secretary.io の会議メモをきっかけに再計算し、判断期限を通知する |
 
-サンプルの年度は 4 月始まりで、FY2026 = 18,000、FY2027 = 30,000、FY2028 = 15,000 k$ です。繁忙期は 12・1 月（1.4 倍）、3 月（1.2 倍）、5 月（1.3 倍）、7 月（1.6 倍）、8 月（1.8 倍）。LLP キットは手持ち 2 セット、追加発注のリードタイム 8 か月です。
-
-### `data/shop_quotes.json` — 工場見積もりとリスク特性
-
-| キー | 意味 | 実務でのデータ源 |
-|---|---|---|
-| `id` / `name` | 工場 ID・名称 | — |
-| `slots` | 同時受入枠 | 工場との契約、スロット確保状況 |
-| `quotes.{WS}.price` | 見積価格（工数・材料・LLP キット込み、今日の為替での本国通貨換算）[k$] | 工場見積書（予算見積もり or 固定価格見積もり） |
-| `quotes.{WS}.tat` | 見積 TAT [月] | 工場見積書 |
-| `transport_cost` | 往復輸送・保険・スタンド費 [k$/件] | 物流業者見積もり |
-| `transport_months` | 輸送による追加の off-wing 期間 [月] | 物流リードタイム実績 |
-| `overrun_share` | findings による費用超過の自社負担割合（T&M = 1、固定価格 = 0） | 契約条件 |
-| `findings.prob` | findings により見積超過が請求される確率 | 過去の同工場・同型式の請求実績 |
-| `findings.overrun_mean` | 超過が起きたときの平均超過率（見積価格比） | 同上 |
-| `findings.overrun_cv` | 超過率の変動係数（対数正規） | 同上 |
-| `delay.shop_months` / `shop_probs` | 工場全体の混雑遅延の分布（シナリオ内で同工場の全エンジンに共通） | 工場の稼働状況、過去の TAT 実績 |
-| `delay.engine_months` / `engine_probs` | エンジン個別の遅延の分布（部品待ち等） | 同上、部品供給状況 |
-| `currency` | 見積通貨。`HOME` 以外は為替リスクを負う | 工場見積書 |
-| `booking_lead_months` | 枠予約のリードタイム（判断期限の計算に使う） | 工場との調整実績 |
-| `expedite.fee` / `tat_reduction` | 特急対応の料金と TAT 短縮月数（キーがなければ特急なし） | 工場見積書 |
-| `volume_commitment.min_visits` / `shortfall_penalty` | 契約上の最低発注件数（テイク・オア・ペイ）と不足 1 件あたりの違約金 | 包括契約 |
-
----
-
-## 4. 数理モデル: 二段階確率 MILP
-
-`shop_mc/model.py` の定式化をそのまま記述します。金額は k$、期間は月です。
-
-### 第 1 段と第 2 段
-
-```
-第 1 段（今決める、不確実性が明らかになる前）
-  x[i] ∈ {0,1}            選択肢 i = (エンジン e, 工場 k, ワークスコープ w, 入場月 t, 特急 r) を採用する
-                           t は取卸し可能期間内、w は許容ワークスコープかつ工場 k が見積もったもの、
-                           r = 特急は工場が特急を提供する場合のみ
-  S    ∈ {0,…,S^max}      計画期間を通じて長期リースする予備エンジン台数
-  q[k] ≥ 0                工場 k の最低発注量に対する不足件数
-
-第 2 段（シナリオ s・月 t ごと、費用・遅延・非計画取卸しが判明した後）
-  l[s,t] ∈ [0, cap_t]     短期リースエンジン数（繁忙期は上限 cap_t = max_engines_peak）
-  a[s,t] ≥ 0              未充足の装着位置数（AOG）。コスト c_aog,t は繁忙期に倍率がかかる
-```
-
-以下、紙面上は `x[e,k,w,t]` と書いても `x[i]` と同じものです。サンプルの選択肢は 490 個（うち特急 196 個）です。
-
-### シナリオが与えるパラメータ
-
-モンテカルロで生成された各シナリオ s は、次を確定させます。
-
-```
-cost[s,i]   選択肢 i で自社が負担するショップビジット費
-            = ( price[k,w] · (1 + overrun_share[k] · ρ[s,e,k]) + rush_fee[k]·[r_i] ) · FX[s]^[k は外貨建て]
-              + transport_cost[k]
-            ρ[s,e,k] = findings が請求された場合の超過率（対数正規）、請求されなければ 0
-            FX[s]    = 為替倍率（平均 1、対数正規 σ = fx.volatility）。全外貨建て見積もりで共通
-down[s,i]   選択肢 i の off-wing 月数
-            = transport_months[k] + TAT_i + shop_delay[s,k] + engine_delay[s,e,k]
-            TAT_i = tat[k,w]、特急なら max(1, tat[k,w] − tat_reduction[k])
-A[s,i,t]    = 1  if  t_i ≤ t < t_i + down[s,i]      （月 t に off-wing）
-U[s,t]      非計画取卸しで off-wing のエンジン数（ポアソン到着 × 所要月数分布）
-```
-
-### 第 1 段の固定費
-
-```
-F_i = green_time_value · (latest_e − t_i)   −   V[w_i]
-      早期取卸しで捨てる寿命                    ワークスコープが生む搭載寿命の価値
-```
-
-取卸し期限 `latest` より前に外すと、その月数分の搭載寿命を捨てることになります。`V[w]`（`workscope_build_value`）は深いワークスコープほど大きな控除になり、これがないと 24 か月だけ見れば常に最も安い PR が選ばれてしまいます。
-
-### 制約
-
-```
-(1) 各入場予定はちょうど 1 回計画する
-    Σ_{i ∈ I(e)} x[i] = 1                                                ∀ e
-
-(2) 計画上の工場能力（見積 TAT、特急なら短縮後の TAT）
-    Σ_{i : k_i = k, t_i ≤ t < t_i + TAT_i} x[i] ≤ slots[k]              ∀ k, t
-
-(3) LLP キット: 追加発注が届く前に使えるのは手持ち分だけ
-    Σ_{i : w_i ∈ LLP WS, t_i < lead_LLP} x[i] ≤ kits_on_hand
-
-(4) 年度予算（期待整備費を入場月の年度で計上）
-    Σ_{i : FY(t_i) = y} Ē[cost_i] · x[i] ≤ budget_y                     ∀ y
-    Ē[cost_i] = 最適化に使うシナリオ集合での cost[s,i] の平均
-
-(5) 最低発注量（テイク・オア・ペイ）
-    q[k] ≥ min_visits_k − Σ_{i : k_i = k} x[i]                          ∀ k（契約のある工場）
-
-(6) 装着位置の充足（シナリオ・月ごと）
-    owned − Σ_i A[s,i,t] · x[i] − U[s,t] + S + l[s,t] + a[s,t] ≥ D      ∀ s, t
-```
-
-(2) は見積 TAT で工場枠を確保する **計画上の** 制約で、輸送や遅延は含みません。遅延による実際の重なりは (6) を通じて予備不足（リース・AOG コスト）として評価されます。(4) の予算は期待値に対する制約なので、どの解き方で作ったシナリオ集合を使うかで右辺との関係が変わります（後述の「悲観値 P90」が実行不能になる理由）。
-
-### 目的関数（リスク中立）
-
-```
-min  c_S · T · S  +  Σ_i F_i · x[i]  +  Σ_k pen_k · q[k]                  第 1 段
-     + (1/N) Σ_s Q_s                                                     第 2 段の標本平均
-
-     Q_s = Σ_i cost[s,i] · x[i]  +  Σ_t ( c_l · l[s,t] + c_aog,t · a[s,t] )
-     c_aog,t = aog_cost_per_month · aog_peak_multiplier[暦月(t)]
-```
-
-### CVaR オプション
-
-`--cvar-weight λ`（λ > 0）を指定すると、目的関数は **総コスト** の期待値と CVaR の和になります。
-
-```
-min  E[総コスト] + λ · CVaR_α[総コスト]
-
-総コスト_s = （第 1 段: c_S·T·S + Σ_i F_i·x[i] + Σ_k pen_k·q[k]）  +  Q_s
-```
-
-CVaR は Rockafellar–Uryasev の線形化で表します。
-
-```
-min  （上記のリスク中立目的）  +  λ · ( η + 1/((1−α)N) · Σ_s z[s] )
-s.t. z[s] ≥ 第 1 段 + Q_s − η,   z[s] ≥ 0                              ∀ s
-     （η は自由変数 = VaR_α の推定値、α は --cvar-alpha、既定 0.9）
-```
-
-第 1 段の項はどのシナリオでも同じ値ですが、CVaR の中に含めることで λ 倍の重みでも評価されます。サンプル外評価の CVaR90 と同じ「総コストの CVaR」を最適化していることになります。
-
-### 問題規模（サンプルデータ）
-
-第 1 段の選択肢は 490 個（0-1 変数）＋ 整数 `S` ＋ 不足件数 `q`。シナリオ数 N = 200、24 か月で、第 2 段の連続変数が 9,600 個、充足制約が 4,800 本です。
-
----
-
-## 5. 計算パイプライン
-
-```
-1. モンテカルロ     N 個のシナリオを生成（費用超過・遅延・為替・非計画取卸し）    scenarios.sample
-2. SAA              二段階確率 MILP を解く（既定 N = 200）                         model.solve_saa
-3. EV 計画          全パラメータを平均値にした確定問題を解く（比較用）            scenarios.mean_value
-4. サンプル外評価   独立な大量シナリオ（既定 5,000）で両計画を評価                 evaluate.evaluate
-                    → 平均、P50/P90、CVaR90、欠航確率、VSS = EV − SAA
-5. ギャップ推定     M 回の独立 SAA の下界平均と評価値（上界）から最適性ギャップを推定  evaluate.saa_gap
-6. 判断期限         計画ごとに判断期限と入場月別コスト曲線を算出                   urgency.analyse
-```
-
-**EV 計画** は 20,000 シナリオの平均から作った 1 シナリオの確定問題です（off-wing 月数は整数に丸め、非計画取卸しは小数の定常平均）。「平均値で計画する」従来型の手法に相当し、SAA 計画との差が確率計画にした価値 **VSS**（Value of the Stochastic Solution）になります。
-
-**サンプル外評価** では、第 1 段（x, S）を固定すると第 2 段が次の閉形式になります。
-
-```
-shortfall[s,t] = max(0, D − (owned − Σ_i A[s,i,t] x[i] − U[s,t] + S))
-l[s,t]         = min(shortfall[s,t], cap_t)
-a[s,t]         = shortfall[s,t] − l[s,t]
-総コスト_s     = 第 1 段（長期予備・F_i・最低発注量の違約金） + Σ_i cost[s,i] x[i]
-                 + Σ_t ( c_l · l[s,t] + c_aog,t · a[s,t] )
-```
-
-MILP を解かずに NumPy のベクトル演算だけで評価できるため、数千シナリオでも高速です。欠航確率は、計画期間中に 1 か月でも `a[s,t] > 0` となるシナリオの割合です。
-
-**最適性ギャップ** は Mak–Morton–Wood 型の推定です。
-
-```
-下界  L̄ = (1/M) Σ_m v̂_m        v̂_m: 独立な SAA 問題 m の最適値（ソルバーの dual bound を使用）
-上界  Ū = 候補計画のサンプル外平均コスト
-gap = Ū − L̄,   95% 片側上限 = gap + 1.645 · sqrt( s_L² / M + s_U² )
-```
-
-SAA 最適値の期待値は真の最適値以下になる（下方バイアス）ため `L̄` は統計的な下界、候補計画の評価値は不偏な上界です。各 SAA の値にはソルバーの dual bound を使うので、MIP が完全に解き切れていなくても下界としての妥当性が保たれます。この推定はリスク中立目的にのみ有効で、`--cvar-weight` 指定時はスキップされます。
-
-### モンテカルロは「ソルバー」ではない
-
-本サンプルでは、モンテカルロは **シナリオ生成** と **計画の評価** に使い、計画そのものを探すのは MILP ソルバーです。
-
-- 「候補計画をランダムに作ってシミュレーションし、一番良いものを選ぶ」やり方では、490 個の選択肢と予備台数の組合せ空間をまともに探索できず、予算や LLP キットの制約を満たす保証も、最適性の保証もない。
-- SAA は、シナリオ全体に対して **1 つの計画** が同時に適応することを MILP で最適化する。入場の重なりと遅延の同時発生のような「裾の相関」が、制約 (6) を通じて直接効く。
-- 解いたシナリオと同じシナリオで評価すると楽観的に偏る（最適化バイアス）。そのため、評価は **独立な** シナリオで行い、ギャップ推定で「シナリオ数は足りているか」を確認する。
-
----
-
-## 6. 結果例
-
-<Aside type="note" title="合成データによる例">
-  合成データ、seed=42、評価 5,000 シナリオ、単位 k$（整備で得る搭載寿命価値と早期取卸しで失う寿命を含む純額）。実在する工場やフリートの実績値ではありません。
+<Aside type="note" title="TypeScript の実装例">
+  以下の断片をつなげた実装例を `examples/engine-mro-agent/`（`src/ingest.ts` 取り込み、`src/run-monthly.ts` 月次実行、`src/ui.ts` 画面埋め込み）として準備しています。本ページのコードはすべて、現在の SDK（`@work-with-ai/sdk`）にある API だけを使っています。
 </Aside>
 
-| 計画 | 平均 | P90 | CVaR90 | 欠航確率 | 今決める |
-|---|---:|---:|---:|---:|---:|
-| 見積もりどおり（確定） | 34,873 | 42,135 | 45,684 | 20.2% | 2 基 |
-| 期待値（EV、確定） | 33,808 | 39,467 | 42,166 | 9.4% | 1 基 |
-| 悲観値 P90（確定） | — | — | — | — | 実行不能 |
-| SAA リスク中立 | **33,793** | 39,346 | 42,042 | 8.0% | 2 基 |
-| SAA ＋ CVaR λ=0.3 | 33,975 | 39,075 | 41,395 | 7.1% | 2 基 |
-| SAA ＋ CVaR λ=1（λ=3 も同じ計画） | 34,843 | **38,291** | **40,056** | **5.3%** | 1 基 |
+共通の準備:
 
-3 つの確定モデルは、それぞれ次の 1 シナリオで解いた計画です。
+```typescript
+import { KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
 
-- **見積もりどおり**: 見積価格・見積 TAT を額面どおりに使い、findings の超過・遅延・非計画取卸しをすべて 0 とする
-- **期待値 (EV)**: 20,000 シナリオの平均値
-- **悲観値 P90**: 20,000 シナリオの 90 パーセンタイル値（off-wing 月数は切り上げ）
+const endpoint = "https://api.workwithagi.dev";
+const apiKey = import.meta.env.VITE_AGI_KEY;
 
-結果から読み取れること:
-
-- 見積もりを額面どおりに信じると、欠航確率は確率計画の約 2.5 倍になります。見積もりは「価格＋リスク分布」として扱う必要があります。
-- 悲観値（全コストを P90）で見ると、年度予算・LLP キット・工場枠をすべて満たす計画が存在しません。予算が「平均的にしか」足りていないことを示すシグナルです。
-- 確率計画は予算制約のもとで FULL を新年度（4月）に送り、手持ち LLP キット 2 セットを早期の入場に割り当てます。
-- CVaR を強めると平均は約 1,000 k$ 上がり、欠航確率は 8.0% → 5.3%、P90・CVaR90 も下がります。
-- サンプルの前提（予備エンジン比率 約 10%、繁忙期リース枠 2 台など）が結果を大きく左右します。実データで較正してから使ってください。
-
-<Aside type="caution" title="較正について">
-  上の数値は、予備比率・欠航コスト・繁忙期倍率・findings の確率などの合成値に強く依存し、欠航確率の水準や手法間の順位も前提次第で変わります。実運用では、自社の信頼性データ・請求実績・予算で入力を較正したうえで、後述の入力分布パネルで前提が妥当かを確認してください。
-</Aside>
+const kb = new KnowledgeClient(endpoint, apiKey);
+const api = WorkAGI.api(endpoint, apiKey);
+const EXAMPLE = "cd examples/engine-shop-selection-mc && pip install -r requirements.txt";
+```
 
 ---
 
-## 7. 解き方を並列に比較して選ぶ（`compare.py`）
+## ① 年間基準計画（暗黙の合意）
 
-上表の 7 つの解き方（見積もりどおり、期待値、悲観値 P90、SAA リスク中立、CVaR λ = 0.3 / 1 / 3）を **プロセス並列** で解き、すべての計画を **同じ評価シナリオ**（既定 5,000）で評価し、実行可能だった各計画の判断期限分析も並列で行います（サンプルでは 4 ワーカーで数十秒）。
-
-```bash
-python compare.py                  # 7 手法をプロセス並列で解き、compare.json と compare.html を出力
-python compare.py --workers 8
-```
-
-| オプション | 既定値 | 内容 |
-|---|---|---|
-| `--workers N` | CPU コア数 | 並列ワーカー数 |
-| `--scenarios N` / `--eval-scenarios N` | `200` / `5000` | SAA に使うシナリオ数 / 共通評価シナリオ数 |
-| `--urgency-scenarios N` | `2000` | 判断期限のコスト曲線に使うシナリオ数 |
-| `--time-limit SEC` | `300` | 各手法の MILP 制限時間 [秒] |
-| `--json-out` / `--html-out` | `compare.json` / `compare.html` | 出力先 |
-| `--fragment` | — | `<html>`/`<head>` を含まない HTML 断片を出力 |
-
-```
-          ┌── 見積もりどおり ──┐
-          ├── 期待値 (EV) ─────┤
-          ├── 悲観値 P90 ──────┤   ProcessPoolExecutor
- データ ──┼── SAA リスク中立 ──┼── （各ワーカーは HiGHS 1 スレッド）
-          ├── CVaR λ=0.3 ──────┤   実行不能な手法はその旨を記録
-          ├── CVaR λ=1 ────────┤
-          └── CVaR λ=3 ────────┘
-                    │
-                    ▼
-   共通の評価シナリオ 5,000 本で全計画を評価（閉形式リコース）
-                    │
-                    ▼
-   計画ごとの判断期限分析（並列）→ パレート集合 → compare.json ＋ compare.html
-```
-
-### パレート集合
-
-実行可能な各計画を **平均コスト・欠航確率・CVaR90** の 3 指標（すべて小さいほど良い）で比べ、他のどの計画にも 3 指標すべてで負けていない（3 指標すべてで同等以下、かつどれかで真に良い計画が存在しない）ものをパレート最適とします。同じ評価シナリオを使うので、指標の差は計画の差そのものです。同一の計画になった手法（例: λ=1 と λ=3）はその旨が表示されます。
-
-### 選択画面（`compare.html`）
-
-外部依存のない 1 ファイルの HTML で、上から順に「急ぐべきか」「どの計画にするか」「会社の制約に収まっているか」「前提にした不確実性は妥当か」を確認できる構成です。
-
-1. **急ぐべきか** — 選択中の計画で今月決めるべきエンジン数、各エンジンの判断期限（効いているリードタイム）、急いだ／待った場合のコスト差、入場月ごとのコスト曲線（繁忙期は網掛け、制約で入場できない月は × と阻んだ制約名）
-2. **どの計画にするか** — 「コストを抑える ↔ 欠航を避ける」スライダー（「コスト最優先」「バランス」「欠航回避最優先」のプリセット付き）、コスト × 欠航確率の散布図とパレートフロント、選択中の計画の総コスト分布（期待値計画との比較ヒストグラム）
-3. **会社の制約** — 年度別の予算消化率（期待整備費 ÷ 予算）、LLP キット（リードタイム内に使う数 / 手持ち、追加発注数）、最低発注量の達成状況と違約金、早期取卸しで捨てる寿命（月数と金額）、特急件数。あわせて入場スケジュール（工場別の色、期待 off-wing 期間と P90 までの幅、繁忙期と年度境界）
-4. **入力パラメータの分布** — 次節
-5. **全手法の比較表** — 実行不能だった解き方も表示
-
-スライダーの推奨は次のスコアで決まります。重み w ∈ [0, 1] はスライダー位置（左端 0、右端 1）です。
-
-```
-norm(v) = (v − min) / (max − min)        min, max は実行可能な全候補の中での値
-
-score(m) = (1 − w) · norm(平均コスト_m) + w · norm(欠航確率_m)
-
-推奨 = argmin score(m)   ただし m はパレート最適な計画に限る
-```
-
-平均コスト（k$）と欠航確率（%）は単位が違うため、候補の中での相対位置に正規化してから重み付けします。パレート最適でない計画は、どの重みでも推奨されません。表やグラフから直接別の計画を選ぶこともでき、スライダーを動かすと推奨に戻ります。
-
-### 入力パラメータの分布パネル
-
-計算に使ったシナリオと同じ乱数モデルから 20,000 回引いた分布を表示し、「見積もりは価格ではなく価格＋この分布として扱っている」ことを計画担当者が確認できるようにします（`scenarios.input_distributions`）。
-
-| パネル | 内容 |
+| | |
 |---|---|
-| **見積もり超過（工場別）** | 自社負担分の超過率（`overrun_share` 適用後、見積価格比）。超過なしの割合・平均・P90 と、超過が出た場合のヒストグラム |
-| **TAT 遅延（工場別）** | 混雑遅延とエンジン個別遅延を合わせた遅延月数の分布 |
-| **為替** | 外貨建て見積もりの本国通貨換算倍率のヒストグラムと P10〜P90 |
-| **非計画取卸し** | 24 か月間のフリート全体の発生件数の分布（MTBUR からのポアソン分布）。1 件ごとに 2〜4 か月エンジンが抜ける |
-| **欠航コストの季節変動** | 月別の欠航コスト（繁忙期倍率を反映）と、各月の短期リース上限 |
+| **業務の問い** | 平常時なら 1 年に何件入場し、いくら使い、予備は何基あれば足りるのか。予算を組むときに皆が「だいたいこのくらい」と合意している数字を、根拠つきで持ちたい |
+| **誰が使う** | 整備計画部門・財務（年度予算の策定）、経営層（中期計画） |
 
-<Aside type="tip" title="SDK との組み合わせ">
-  WorkWithAGI SDK では、エージェントが `createSession` で作られたサンドボックス内で `compare.py` を実行して HTML を生成し、アプリケーションがその選択画面を計画担当者の画面に表示する、という使い方を想定しています。`--fragment` を付けると `<html>`/`<head>` を含まない断片が出力され、既存の画面に埋め込みやすくなります。エージェントは解き方の候補を並べて評価するところまでを担い、**いつ決めるか・どの計画を採るかは計画担当者が判断します**。
+**SDK での流れ** — 信頼性データと工場実績をナレッジに入れ、エージェントに 20 年のライフサイクル・シミュレーションを回させて、基準値と「いまのフリートの状態」を作らせます。
+
+```typescript
+await kb.upload(reliabilityCsv, "reliability-mtbur");     // 非計画取卸し率・EGT 劣化
+await kb.upload(shopHistoryCsv, "shop-visit-history");    // 過去の入場・費用・TAT
+
+const baseline = await api.createSession({
+  user_id: "planner-01",
+  tool: "claude",
+  label: "annual-baseline",
+  prompt: [
+    EXAMPLE,
+    "python lifecycle.py --fleet-out data/fleet_visits_lifecycle.json を実行し、",
+    "年間の入場件数（ワークスコープ別）・整備費・棚にある予備の数を表にしてください。",
+    (await kb.context("非計画取卸し率、EGT マージンの劣化、ワークスコープ別の費用と TAT", 8)).context,
+  ].join("\n"),
+});
+```
+
+**得られるもの**
+
+- 年間の入場件数・整備費・予備の水準（定常状態の値）。これを **基準計画** として固定し、以降のユースケースはすべて「基準からの増減」で示します。
+- 2 年間の計画窓の入力（`fleet_visits_lifecycle.json`）。エンジンが白紙から始まるのではなく、過去の運用が作り出す状態から始まります（サンプルでは 2 年間の入場予定 44 件、合成データ）。
+
+<Aside type="note">
+  基準計画を版として固定して差分を自動で出す部分は、オブジェクトストレージの提案に含まれます。現在のサンプルでは、`lifecycle.py` の定常値を予算の基準に使うところまでです。
 </Aside>
+
+**使う分析スクリプト**: `lifecycle.py`
 
 ---
 
-## 8. 実行方法
+## ② 月次の入場判断（急ぐべきか）
 
-<Steps>
+| | |
+|---|---|
+| **業務の問い** | 今月決めなければならないエンジンはどれか。どの計画を採り、誰が何を承認するか |
+| **誰が使う** | 整備計画担当者（毎月の計画会議）、部門長（承認） |
 
-1. 依存パッケージをインストールします（`pulp`, `highspy`, `numpy`）。
+**SDK での流れ** — planner が計算と報告書を作り、reviewer が前提を点検し、作業の様子は計画担当者の画面に埋め込みます。
 
-   ```bash
-   cd examples/engine-shop-selection-mc
-   pip install -r requirements.txt
-   ```
+```typescript
+const month = await api.createSession({
+  user_id: "planner-01",
+  tool: "claude",
+  label: "monthly-2026-10",
+  prompt: [
+    EXAMPLE,
+    "python compare.py --workers 4 --fragment を実行し、7 つの解き方を比べてください。",
+    "続けて python decide.py と python build_room.py を実行し、report.html と room.html を作成。",
+    "今月決めるべきエンジン、その判断期限と理由、承認事項を 10 行以内で要約してください。",
+  ].join("\n"),
+});
 
-2. リスク中立 SAA（200 シナリオ）と EV 計画を比較します。
+await api.addPane(month.session_id, { tool: "claude", role: "reviewer" }); // 前提・例外理由の点検
 
-   ```bash
-   python run.py
-   ```
+WorkAGI.terminal({ container: "#planner-terminal", endpoint, apiKey, sessionId: month.session_id });
+```
 
-3. 必要に応じてギャップ推定、リスク回避、独自データを指定します。
+**得られるもの**（基準計画からの差分、合成データ）
 
-   ```bash
-   python run.py --replications 5                  # 最適性ギャップの統計推定つき
-   python run.py --cvar-weight 1.0                 # リスク回避型
-   python run.py --shops my_quotes.json --json-out plan.json
-   python -m unittest discover -s tests
-   ```
+- **今月決めるエンジン**：確率計画（SAA）で 1 基。残りは判断期限まで待てるので、分解検査の結果や見積もりの更新を待ってから決めればよい、と明示されます。
+- **欠航確率**：見積もりを額面どおりに信じた計画は 77.9%、平均値で作った計画でも 36.5%。確率計画では 13.1%、リスク回避（CVaR λ=1）を加えると 6.9% に下がります。平均コストは見積もりどおりの計画より約 7,300 k$ 低くなります（146,477 → 139,174 k$）。
+- 期限前に取り卸す例外がある場合は、その理由（要監視エンジン、繁忙期の回避など）が報告書と判断ルームに並びます。
 
-4. 7 手法の並列比較と選択画面を生成します。
+**使う分析スクリプト**: `compare.py`（7 手法の並列比較と選択画面）、`decide.py`（報告書）、`build_room.py`（判断ルーム）
 
-   ```bash
-   python compare.py --workers 4
-   ```
+---
 
-</Steps>
+## ③ 工場・契約の選定
 
-`run.py` のオプション:
+| | |
+|---|---|
+| **業務の問い** | 3 社の見積もりのうち、どこに何件出すか。固定価格契約・枠の追加予約・エンジンプール契約は、払う価値があるか |
+| **誰が使う** | 調達・契約担当者、整備計画担当者 |
 
-| オプション | 既定値 | 内容 |
-|---|---|---|
-| `--fleet PATH` | `data/fleet_visits.json` | フリート・入場予定・会社の制約 |
-| `--shops PATH` | `data/shop_quotes.json` | 工場見積もりとリスク特性 |
-| `--scenarios N` | `200` | SAA に使うシナリオ数 |
-| `--eval-scenarios N` | `5000` | サンプル外評価のシナリオ数 |
-| `--cvar-weight λ` | `0` | リスク回避の重み（0 = リスク中立） |
-| `--cvar-alpha α` | `0.9` | CVaR の信頼水準 |
-| `--replications M` | `0` | ギャップ推定用の SAA 反復回数（2 以上で有効） |
-| `--seed` | `42` | 乱数シード |
-| `--threads N` | — | HiGHS の並列スレッド数 |
-| `--time-limit SEC` | `120` | 1 回の MILP の制限時間 [秒] |
-| `--json-out PATH` | — | 評価指標、SAA 計画（工場・WS・入場月・特急）、長期予備台数を JSON で保存 |
+**SDK での流れ** — 見積書を取り込み、エージェントが見積もりを「価格 ＋ リスク分布」の JSON に起こします。契約解釈を含むため、reviewer ペインに根拠を点検させます。
 
-予算・LLP キット・工場枠を同時に満たす計画がない場合、`solve_saa` は `InfeasibleError`（予算・手持ち LLP キット・工場枠の見直しを促すメッセージ付き）を送出します。`compare.py` ではその手法を「実行不能」として表に残します。
+```typescript
+await kb.upload(inHouseQuotePdf, "quote-in-house");
+await kb.upload(oemQuotePdf, "quote-oem-net");
+await kb.upload(indMroQuotePdf, "quote-ind-mro");
+await kb.upload(overrunHistoryCsv, "findings-overrun-history");
 
-### SDK からの実行
+const terms = await kb.context(
+  "各工場の見積価格、通貨、TAT、超過費用の負担条件、枠予約リードタイム、特急料金、最低発注件数", 10);
 
-工場から届いた見積書 PDF と契約書をナレッジベースに入れ、エージェントに JSON 化と計算を任せる例です。
+const shops = await api.createSession({
+  user_id: "procurement-01",
+  tool: "claude",
+  label: "shop-selection",
+  prompt: [
+    EXAMPLE,
+    "以下の抜粋から data/shop_quotes.json と同じ形式で my_quotes.json を作り、根拠を notes.md に記録。",
+    "python run.py --shops my_quotes.json --json-out plan.json と python actions.py を実行し、",
+    "工場別の件数と、契約の打ち手（固定価格・枠追加・プール）の効果を要約してください。",
+    "--- 抜粋 ---", terms.context,
+  ].join("\n"),
+});
+await api.addPane(shops.session_id, { tool: "claude", role: "reviewer" });
+```
 
-<Tabs>
-  <TabItem label="TypeScript">
-  ```typescript
-  import { AgiApiClient, KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
+**得られるもの**（合成データ）
 
-  const endpoint = "https://api.workwithagi.dev";
-  const apiKey = import.meta.env.VITE_AGI_KEY;
-
-  // 1) 見積書・契約書・実績データをナレッジベースへ
-  const kb = new KnowledgeClient(endpoint, apiKey);
-  await kb.upload(inHouseQuotePdf, "quote-in-house");
-  await kb.upload(oemQuotePdf, "quote-oem-net");
-  await kb.upload(indMroQuotePdf, "quote-ind-mro");
-  await kb.upload(overrunHistoryCsv, "findings-overrun-history");
-  await kb.upload(budgetPlanXlsx, "mro-budget-by-fy");
-
-  // 2) 契約形態・超過負担・枠予約・最低発注量に関する抜粋を取得
-  const terms = await kb.context(
-    "各工場の見積価格、通貨、TAT、超過費用の負担条件、枠予約リードタイム、特急料金、最低発注件数",
-    10,
-  );
-
-  // 3) エージェントに JSON 化と計算を依頼
-  const api = new AgiApiClient(endpoint, apiKey);
-  const session = await api.createSession({
-    user_id: "planner-01",
-    tool: "claude",
-    label: "shop-selection-mc",
-    prompt: [
-      "cd examples/engine-shop-selection-mc && pip install -r requirements.txt",
-      "以下の抜粋から data/shop_quotes.json と同じ形式で my_quotes.json を作成してください。",
-      "overrun_share・booking_lead_months・expedite・volume_commitment は契約条件から、",
-      "findings と delay は実績データから推定し、根拠を notes.md に記録すること。",
-      "その後 python run.py --shops my_quotes.json --replications 5 --json-out plan.json と",
-      "python compare.py --shops my_quotes.json --workers 4 --fragment を実行し、",
-      "今月決めるべきエンジンと、EV 計画との差（VSS）を要約してください。",
-      "--- 抜粋 ---",
-      terms.context,
-    ].join("\n"),
-  });
-
-  // 4) 前提条件のレビュー担当
-  await api.addPane(session.session_id, { tool: "claude", role: "reviewer" });
-
-  // 5) 調達担当者の画面に埋め込み
-  WorkAGI.terminal({
-    container: "#shop-selection-terminal",
-    endpoint,
-    apiKey,
-    sessionId: session.session_id,
-  });
-  ```
-  </TabItem>
-  <TabItem label="Python（直接）">
-  ```python
-  from shop_mc import evaluate, load, mean_value, sample, solve_saa
-  from shop_mc.urgency import analyse
-
-  p = load("data/fleet_visits.json", "data/shop_quotes.json")
-  saa = solve_saa(p, sample(p, 200, seed=42))
-  ev_plan = solve_saa(p, mean_value(p, seed=49))
-
-  sc_out = sample(p, 5000, seed=42 + 999)
-  e_saa, e_ev = evaluate(p, saa, sc_out), evaluate(p, ev_plan, sc_out)
-  print("VSS:", e_ev.mean - e_saa.mean, "k$")
-
-  u = analyse(p, saa, sample(p, 2000, seed=42 + 999))
-  for e in u["engines"]:
-      print(e["esn"], e["status"], e["deadline_label"], e["binding_lead"])
-  ```
-  </TabItem>
-</Tabs>
+- 工場ごとの件数と、見積価格ではなく **期待コスト・P90・欠航確率** での比較。平均値で作った計画に比べ、不確実性を入れた計画は平均で約 1,400 k$ 安くなります（140,596 → 139,174 k$）。
+- 契約の打ち手ごとの差分：予備エンジンの追加リースは、どの条件でも最適化に選ばれませんでした。**エンジンプール契約や別機種での代替運航のほうが安く欠航リスクを下げる** ためです。
 
 <Aside type="caution">
-  見積書から `overrun_share` や findings の分布、枠予約リードタイムを抽出する作業は、契約解釈を伴います。エージェントの出力は必ず調達・契約担当者が確認してください。
+  見積書から超過費用の負担割合や枠予約リードタイムを読み取る作業は契約解釈を伴います。エージェントの出力（`notes.md`）は必ず調達・契約担当者が確認してください。
 </Aside>
+
+**使う分析スクリプト**: `run.py`（見積もりを差し替えた再計算）、`actions.py`（契約の打ち手）、`levers.py`（よく取られる打ち手の単独効果）
 
 ---
 
-## 9. 拡張の方向性
+## ④ 資産戦略（予備・中寿命エンジン・部品取り・機材更新）
 
-| 拡張 | 概要 |
+| | |
 |---|---|
-| **第1弾との接続** | [第1弾](/ja/showcase/engine-mro-optimization/) の統合計画の出力を `window` / `allowed_workscopes` / `workscope_build_value` に接続し、「いつ・何を」と「どこで」を階層的に決める |
-| **多段階（ローリング）再最適化** | 分解検査後の確定見積もりなど、情報の更新を受けて残りの入場を再最適化する。判断期限の先にあるエンジンは、この再最適化で決めればよい |
-| **L-shaped 法（Benders 分解）** | 第 2 段をシナリオごとの部分問題に分け、シナリオ数を大幅に増やす。CVaR の裾推定の改善にも有効 |
-| **不確実な工場枠・輸送** | 他社の入場による混雑で工場枠自体を不確実にする、輸送リードタイムを分布として扱う |
+| **業務の問い** | 工場で直す代わりに中寿命エンジンを買うべきか。予備を増やすべきか。新機種の受領が進むなら、整備せずに部品取りに回すべきか |
+| **誰が使う** | 経営層・資産管理部門・機材計画部門 |
+
+**SDK での流れ** — 誰にも確定できない条件（中古エンジンの価格、他機種が肩代わりできる機数など）を振り、条件ごとに別のエージェントセッションで **並列に** 解かせます。
+
+```typescript
+const whatIfs = {
+  explore: "python explore.py --workers 8",          // 5 条件 × 108 通りで打ち手を選ばせ、決定木で分類
+  breakeven: "python sensitivity.py",                // 中寿命エンジン価格の損益分岐、予備の厚さ × 代替運航
+  transition: "python actions.py",                   // 737-8 受領が進むケースを含む打ち手の比較
+};
+
+const sessions = await Promise.all(
+  Object.entries(whatIfs).map(([label, cmd]) =>
+    api.createSession({
+      user_id: "asset-01",
+      tool: "claude",
+      label: `asset-${label}`,
+      prompt: `${EXAMPLE}\n${cmd}\n結果から、答えが切り替わる条件（しきい値）を 5 行で要約してください。`,
+    })),
+);
+```
+
+**得られるもの**（合成データ）
+
+- **判断を最も大きく分けるのは中寿命エンジンの正味価格**：5,500 k$ 以下なら入場の 3 分の 1 以上を中古エンジンとの入れ替えにするのが得、6,500 k$ 以上なら工場整備のみ。市場見積もりの取得が最優先の行動になります。
+- 予備が薄い場合（保有 156 基の条件）、他機種での代替がないと欠航確率は最大 51%、代替ありでは 6% に下がります。
+- 新機種の受領が進むケースでは、整備せずに部品取りに回す案が打ち手の候補に入ります。
+
+**使う分析スクリプト**: `explore.py`、`sensitivity.py`、`actions.py`
+
+---
+
+## ⑤ リスク対応（MRO 混雑・LLP 逼迫）
+
+| | |
+|---|---|
+| **業務の問い** | 外部工場の TAT が延びたら、LLP キットの調達が 12 か月になったら、計画はどこが崩れ、どの要望を諦めればよいか |
+| **誰が使う** | 整備計画部門長・経営層（リスク会議）、調達部門 |
+
+**SDK での流れ** — 会議で「工場が混んでいる」と話題に出たら、その会議メモをきっかけにストレスケースを解き直します。会議メモからのイベント連携は提案段階なので、現在はナレッジ検索で拾った議事メモをプロンプトに渡します。
+
+```typescript
+// Secretary.io の議事メモを同期しているナレッジから、関連する発言を拾う
+const notes = await kb.search("エンジン工場 TAT 遅延 LLP 納期", 5);
+
+const stress = await api.createSession({
+  user_id: "planner-01",
+  tool: "claude",
+  label: "risk-backlog",
+  prompt: [
+    EXAMPLE,
+    "python decide.py を実行し、基準・MRO 混雑・LLP 逼迫・複合ストレスの 4 ケースで",
+    "どの要望が満たせなくなるか、どれを諦めれば残りが守れるかを要約してください。",
+    "--- 会議メモ ---",
+    ...notes.results.map((r) => r.chunk),
+  ].join("\n"),
+});
+```
+
+**得られるもの**（合成データ）
+
+- 前提 4 ケース（基準／MRO 混雑：外部工場 TAT +1 か月／LLP 逼迫：手持ち半減・調達 12 か月／複合ストレス）それぞれでの、基準計画からのコストと欠航確率の変化。
+- **LLP 逼迫** のときは、下位の要望（予備を増やさない、キットは手持ち）を諦めれば、欠航確率目標・予備バッファ・予算は守れます。
+- 全コストを悲観値（P90）で見ると、年度予算・LLP キット・工場枠を同時に満たす計画は存在しません。予算が「平均的にしか」足りていないことのシグナルとして報告書に出ます。
+
+**使う分析スクリプト**: `decide.py`（前提ケースと要望の優先順位）、`actions.py`（MRO 混雑ケースでの打ち手）、`explore.py`
+
+---
+
+## 付録：計算の中身
+
+各スクリプトの中身は、SDK リポジトリのサンプルに README として説明があります。
+
+- [`examples/engine-shop-selection-mc/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-shop-selection-mc) — 工場見積もりを価格 ＋ リスク分布として扱う二段階確率計画、報告書・判断ルーム・分析スクリプト一式（Python + PuLP + HiGHS + NumPy）
+- [`examples/engine-mro-optimization/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-mro-optimization) — 取卸し時期 × ワークスコープ × 予備エンジンの統合計画モデル（[第1弾](/ja/showcase/engine-mro-optimization/)）
+- `examples/engine-mro-agent/` — 本ページの TypeScript 断片をつないだ実装例（準備中）
+
+要点だけ示すと、計算は次の 3 段です。
+
+```
+1. モンテカルロ   見積もりの費用超過・TAT 遅延・為替・非計画取卸しのシナリオを N 本生成
+                  （不具合の有無はエンジン側の性質なので、同じシナリオでは全工場に同じ乱数）
+2. 確率計画(SAA)  1 段目: 各エンジンの工場・ワークスコープ・入場月・特急、長期予備の台数
+                  2 段目: シナリオ × 月ごとに、不足を 短期リース → 別機種で代替 → 欠航 の順に埋める
+                  目的:   min E[総コスト] + λ · CVaR90[総コスト]   （λ = 0 ならリスク中立）
+                  制約:   年度予算、LLP キット、工場枠、最低発注量、予備バッファ、欠航確率目標
+3. 評価           独立な 5,000 シナリオで平均・P90・CVaR90・欠航確率を出し、7 つの解き方を比べる
+```
+
+判断期限は次の式で出します。
+
+```
+判断期限 = 計画上の入場月 − 最も長いリードタイム（工場の枠予約、手持ちで足りない LLP キットの発注）
+```
 
 ---
 
 ## 関連ページ
 
-- [航空エンジン整備計画の最適化（第1弾）](/ja/showcase/engine-mro-optimization/)
+- [第1弾：統合計画モデル（研究用リファレンス）](/ja/showcase/engine-mro-optimization/)
+- [Secretary.IO](/ja/showcase/secretary-io/) — 会議メモをナレッジにする事例
 - [ナレッジベース (RAG)](/ja/sdk/knowledge/) — `KnowledgeClient` の詳細
+- [パイロットモード](/ja/sdk/pilot-mode/) — メインターミナルとエージェントペインの UI
 - [SDK クイックスタート](/ja/sdk/quickstart/)

@@ -1,456 +1,52 @@
 ---
-title: Engine MRO Optimization
-description: Jointly optimizing removal timing, workscope and spare engines as a single MILP, operated by WorkWithAGI SDK agents
+title: "Part 1: Integrated Planning Model (Research Reference)"
+description: A research reference implementation that decides aircraft engine removal timing × workscope × spare engines in a single MILP. For business use, see "Running Engine Maintenance Planning with AI Agents"
 ---
 
-import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
 
-<Aside type="tip" title="Part 1">
-  This page is part 1. Part 2, [Shop Quote Selection under Uncertainty](/en/showcase/engine-shop-selection-mc/), decides **which shop** each planned visit goes to, under uncertainty in cost overruns, TAT delays and unscheduled removals.
+<Aside type="tip" title="Looking for the business workflow?">
+  How to run engine maintenance planning with the WorkWithAGI SDK (annual baseline, monthly decisions, shop selection, asset strategy, risk response) is covered in [Running Engine Maintenance Planning with AI Agents](/en/showcase/engine-shop-selection-mc/). This page introduces the part 1 model that it builds on.
 </Aside>
 
-Aircraft engine maintenance planning couples three decisions tightly: *when to remove an engine*, *what to do in the shop*, and *which engine flies in the meantime*. This showcase formulates all three as a **single mixed-integer linear program (MILP)** and shows how AI agents on the WorkWithAGI SDK take care of data gathering, model execution and constraint review.
+## What the model decides
+
+A mixed-integer linear program (MILP) that decides, for a whole fleet, month by month over several years, **when to remove each engine, which workscope to perform, and how to cover the gap with spares or leases**.
+
+| Element | Content |
+|---|---|
+| Decisions | Induction month and workscope, engine utilisation, lease count |
+| Tracked state | EGT margin, LLP remaining life per module |
+| Constraints | Installed positions covered (own spares + leases + AOG), shop slots, EGT / LLP limits |
+| Objective | Discounted (shop visits + leases + engine changes + AOG + fuel burn from deterioration) − end-of-horizon asset value |
+
+```
+min  Σ_t δ_t · [ shop visits + leases + engine changes + AOG + fuel deterioration ]  −  κ · end value (EGT margin, LLP life)
+```
+
+## Why it was built
+
+Three trade-offs — deferring pushes shop cost out but raises fuel burn and AOG risk; advancing throws away LLP life; deeper workscopes cost more but push the next removal further out — cannot be reconciled one engine at a time. Handling all engines, periods and workscopes together shows that a plan respecting fleet-wide shop capacity and spares is achievable.
+
+The model is deterministic (quotes and averages taken at face value). In practice quote overruns, TAT delays and unscheduled removals cannot be ignored, so the business workflow is centred on the part 2 stochastic model (shop quotes as price + risk distribution). This model's output feeds it as removal windows, allowed workscopes and workscope values.
 
 <Aside type="caution" title="About the data">
-  All fleet data on this page (engine condition, costs, TAT, LLP lives, etc.) is **synthetic and illustrative**. It is not actual data from any OEM, engine type or airline. For real use, replace the parameters with values from your own shop manuals and contracts.
+  The sample fleet data (engine condition, costs, TAT, LLP limits, etc.) is synthetic and does not represent any specific OEM, engine type or airline.
 </Aside>
 
-<CardGrid>
-  <Card title="For executives" icon="rocket">
-    Compares shop visit cost, fuel burn, lease cost and AOG risk on a single **net present value (NPV)** basis, and quantifies the trade-off between deferring and advancing shop visits.
-  </Card>
-  <Card title="For researchers" icon="open-book">
-    Covers the reset linearization of state variables, when upper-bound-only states are exact, how to read the MIP gap, and paths toward decomposition and stochastic extensions.
-  </Card>
-  <Card title="For architects" icon="puzzle">
-    Shows sandboxed agent execution and embedding into a planner UI with `AgiApiClient`, `KnowledgeClient` and `WorkAGI.terminal`.
-  </Card>
-  <Card title="Source code" icon="github">
-    The full model lives in the SDK repository under `examples/engine-mro-optimization/` (Python + PuLP; HiGHS / CBC / SCIP).
-  </Card>
-</CardGrid>
+## Source code and details
 
----
+The formulation (state linearisation, why upper-bound-only states are exact, reading MIP gaps, research extensions) and how to run it are in the SDK repository README.
 
-## 1. The problem
+- [`examples/engine-mro-optimization/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-mro-optimization) (Python + PuLP; HiGHS / CBC / SCIP)
 
-The two engines on each narrow-body aircraft are the most expensive maintenance items in the fleet. A single shop visit (SV) costs millions of dollars, and decisions about its timing and content drive costs for years.
-
-| Driver | What it is | Impact on the plan |
-|---|---|---|
-| **Shop visit cost** | Cost and TAT vary widely by workscope (performance restoration only / core LLP replacement / LP LLP replacement / full overhaul) | Deeper workscopes cost more but extend the interval to the next SV |
-| **EGT margin deterioration** | Exhaust gas temperature (EGT) margin erodes with every cycle, increasing fuel burn | The longer a deteriorated engine flies, the higher the fuel bill; once margin runs out the engine must come off |
-| **LLP life limits** | Life-limited parts (disks, shafts, etc.) must be replaced at their certified cycle limit | Remaining life per module constrains both SV timing and workscope |
-| **Shop capacity** | Only a limited number of engines can be in the shop at once (slots, contract capacity) | Clustered removals create queues, forcing visits earlier or later |
-| **Spare engines** | When owned spares are insufficient, short-term leases fill the gap; if those run out, the aircraft is grounded (AOG) | Lease and AOG cost feed back into SV timing decisions |
-
-These drivers trade off against each other:
-
-- **Deferring** an SV captures the time value of money, but fuel burn rises, and LLP and EGT limits may be hit simultaneously across the fleet, risking capacity overload and AOG.
-- **Advancing** an SV throws away remaining LLP life (asset value), but levels the shop workload and makes spare coverage easier.
-- **Deepening the workscope** renews multiple LLP stacks at once and pushes the next removal out, at the price of higher immediate cash-out and longer TAT.
-
-Spreadsheet or rule-based planning can make each per-engine decision look sensible while the fleet as a whole violates capacity and spare constraints. Hence an optimization model that handles all engines, all months and all workscopes simultaneously.
-
----
-
-## 2. Architecture
-
-The optimization model itself is a small Python package (PuLP + HiGHS). The WorkWithAGI SDK handles everything around it: gathering data, running the model, verifying the output and presenting it to the planner.
-
+```bash
+cd examples/engine-mro-optimization
+pip install -r requirements.txt
+python solve.py data/sample_fleet.json
 ```
- ┌───────────────────────────── Planner web UI ───────────────────────────────┐
- │                                                                            │
- │   Gantt / KPI view              WorkAGI.terminal({ container, sessionId })  │
- │   (renders plan.json)           ┌────────────────────────────────────────┐  │
- │          ▲                      │  modeler (main)  │  reviewer (pane)    │  │
- │          │                      └────────┬─────────┴──────────┬──────────┘  │
- └──────────┼───────────────────────────────┼────────────────────┼─────────────┘
-            │ plan.json                     │ WebSocket (PTY)    │
-            │                               ▼                    ▼
- ┌──────────┴─────────────────────────  Sandboxed session  ──────────────────────┐
- │  AgiApiClient.createSession({ user_id, tool: "claude", prompt })              │
- │  AgiApiClient.addPane(sessionId, { tool: "claude", role: "reviewer" })        │
- │                                                                               │
- │   modeler:  shape data → run solve.py → plan.json / report                    │
- │   reviewer: check plan.json against LLP limits, TAT and workscope definitions │
- │                                                                               │
- │   examples/engine-mro-optimization/                                           │
- │     engine_mro/data.py   engine_mro/model.py   engine_mro/report.py           │
- │     solve.py  ──►  HiGHS / CBC / SCIP                                         │
- └───────────────────────────────────────▲───────────────────────────────────────┘
-                                         │ knowledge.context(query)
- ┌───────────────────────────────────────┴───────────────────────────────────────┐
- │  KnowledgeClient                                                              │
- │    upload(fleet_status.json)      fleet status (EGT margin, LLP remaining)     │
- │    upload(engine_shop_manual.pdf) workscope definitions, TAT, LLP lives        │
- │    upload(llp_back_to_birth.csv)  LLP back-to-birth records                    │
- └───────────────────────────────────────────────────────────────────────────────┘
-```
-
-| SDK element | Role |
-|---|---|
-| `AgiApiClient.createSession({ user_id, tool: "claude", prompt })` | Creates a sandboxed AI terminal session; `prompt` hands the task to the modeler agent |
-| `AgiApiClient.addPane(sessionId, { tool, role })` | Adds a role pane such as `reviewer` to the same session; panes share the session's files |
-| `KnowledgeClient.upload(file, id)` | Ingests fleet data, shop manuals and LLP records into the knowledge base |
-| `KnowledgeClient.context(query, limit)` | Retrieves excerpts on constraints (LLP lives, TAT, workscope content) to inject into prompts |
-| `WorkAGI.terminal({ container, endpoint, apiKey, sessionId })` | Embeds the agents' working terminal in the planner's web UI |
-
-### Division of roles
-
-- **Modeler agent** — Converts figures from the knowledge base into the `data/*.json` format, runs `solve.py` and produces the plan. It also runs sensitivity analyses via CLI options (shop slots 1 → 2, lease rate ±30%, and so on).
-- **Reviewer agent** — Checks the resulting `plan.json` against the shop manual and LLP records, flagging violations that lie outside the formulation (e.g. "the model allows this, but the manual requires these LLPs to be replaced together") so that data or model can be corrected.
-- **Planner (human)** — Monitors both agents through the embedded terminal and approves the final plan. Optimization output informs the decision; accountability stays with the human.
-
-### Code: ingesting knowledge and creating the session
-
-```typescript
-import { AgiApiClient, KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
-
-const endpoint = "https://api.workwithagi.dev";
-const apiKey = import.meta.env.VITE_AGI_KEY;
-
-// 1) Put the planning inputs into the knowledge base
-const kb = new KnowledgeClient(endpoint, apiKey);
-await kb.upload(fleetStatusFile, "fleet-status");        // EGT margin, LLP remaining, utilization
-await kb.upload(shopManualFile, "engine-shop-manual");   // workscopes, TAT, LLP lives
-await kb.upload(llpRecordsFile, "llp-back-to-birth");    // LLP history
-
-// 2) Retrieve excerpts relevant to the constraints
-const constraints = await kb.context(
-  "certified LLP life per module, replacement scope and TAT per workscope",
-  8,
-);
-
-// 3) Create the modeler agent session
-const api = new AgiApiClient(endpoint, apiKey);
-const session = await api.createSession({
-  user_id: "planner-01",
-  tool: "claude",
-  label: "engine-mro-plan",
-  prompt: [
-    "Build a maintenance plan in examples/engine-mro-optimization.",
-    "Extract parameters from the excerpts below into data/fleet.json,",
-    "then run: python solve.py data/fleet.json --json-out plan.json",
-    "--- excerpts ---",
-    constraints.context,
-  ].join("\n"),
-});
-
-// 4) Add a reviewer pane (it can read the same session's files)
-const reviewer = await api.addPane(session.session_id, {
-  tool: "claude",
-  role: "reviewer",
-});
-
-// 5) Embed in the planner UI
-const term = WorkAGI.terminal({
-  container: "#mro-terminal",
-  endpoint,
-  apiKey,
-  sessionId: session.session_id,
-  theme: "dark",
-});
-```
-
-<Aside type="tip">
-  Agents run inside a sandboxed session, so installing solvers or running heavy computations has no effect on the planner's machine or internal systems.
-</Aside>
-
----
-
-## 3. Mathematical model
-
-This section mirrors the formulation in `engine_mro/model.py`. One period is one month; money is in k$ (thousand USD).
-
-### Sets
-
-```
-E                 engines (engine serial number, ESN)
-T = {0, …, H−1}   planning months (H = horizon, 48 months in the sample)
-W                 workscopes (PR, CORE, LP, FULL)
-W^R ⊆ W           workscopes with performance restoration (reset EGT margin)
-M                 modules (FAN_LPC, HPC, HPT, LPT)
-R_w ⊆ M           modules whose LLP stack is replaced by workscope w
-```
-
-### Parameters
-
-| Symbol | Meaning | Data field |
-|---|---|---|
-| `G^max` | Maximum EGT margin [°C] | `egt_margin_max` |
-| `g⁰_e`, `r⁰_em` | Initial EGT margin, initial remaining LLP life | `egt_margin`, `llp_remaining` |
-| `c_e` | Cycles per month | `cycles_per_month` (per-engine override) |
-| `Δg_e` | Monthly EGT loss = `egt_loss_per_1000_cycles · c_e / 1000` | `egt_loss_per_1000_cycles` |
-| `ℓ_m` | Certified LLP life of module m [cycles] | `llp_life` |
-| `C_w`, `TAT_w` | Workscope cost, turn-around time in months | `cost`, `tat` |
-| `Ĝ_w` | EGT margin after restoration (w ∈ W^R) | `egt_restore_to` |
-| `a_e` | Engine already in the shop and unavailable until month `a_e` | `in_shop_until` |
-| `ι_e` | Installed on an aircraft at the start (0/1) | `installed` |
-| `P` | Engine positions that must be filled every month | `installed_positions` |
-| `S` | Engines allowed in the shop simultaneously | `shop_slots` |
-| `L^max` | Maximum short-term leases | `max_lease_engines` |
-| `φ` | Monthly extra fuel cost per °C of lost margin | `fuel_penalty_per_degC_month` |
-| `c^L`, `c^chg`, `c^AOG` | Lease per month, engine change, AOG penalty per month | `lease_cost_per_month`, etc. |
-| `δ_t` | Discount factor `(1+ρ)^(−t/12)` | `discount_rate_annual` |
-| `κ`, `v^g`, `v^m` | Terminal-value haircut, value of 1 °C EGT, value of one LLP cycle | `terminal_value_factor`, etc. |
-
-### Decision and state variables
-
-```
-x[e,t,w] ∈ {0,1}        induct engine e at the start of month t with workscope w (defined for t ≥ a_e)
-u[e,t]   ∈ {0,1}        engine e is installed and flying in month t
-y[e,t]   ∈ [0,1]        engine e is installed on an aircraft in month t (engine change)
-L[t]     ∈ {0,…,L^max}  short-term leased engines in month t
-s[t]     ≥ 0            uncovered engine positions (AOG) in month t
-
-States (start of month t, t = 0, …, H)
-g[e,t]   ∈ [0, G^max]   EGT margin [°C]
-r[e,m,t] ∈ [0, ℓ_m]     remaining LLP life of module m [cycles]
-f[e,t]   ≥ 0            fuel-burn penalty due to deterioration
-```
-
-`y` and `s` are continuous, but since `u` is binary and both carry positive cost, optimal solutions make `y` integral and `s` minimal automatically.
-
-### Constraints
-
-Shop occupancy (the engine occupies the shop for its TAT):
-
-```
-inShop(e,t) = Σ_{w∈W} Σ_{τ = max(0, t−TAT_w+1)}^{t} x[e,τ,w]  +  [t < a_e]
-```
-
-**(1) Availability** — an engine is flying, in the shop, or a spare on the shelf. This also forbids overlapping shop visits.
-
-```
-u[e,t] + inShop(e,t) ≤ 1                                   ∀ e, t
-```
-
-**Install events** — flying an engine that did not fly last month incurs an engine change.
-
-```
-y[e,t] ≥ u[e,t] − u[e,t−1]        (at t = 0, u[e,−1] = ι_e)
-```
-
-**(2) EGT margin evolution and reset**
-
-```
-g[e,0]   = g⁰_e
-g[e,t+1] ≤ g[e,t] − Δg_e · u[e,t] + Σ_{w∈W^R} Ĝ_w · x[e,t,w]
-g[e,t+1] ≤ Ĝ_w + (G^max − Ĝ_w) · (1 − x[e,t,w])           ∀ w ∈ W^R
-0 ≤ g[e,t] ≤ G^max
-```
-
-The first inequality says "flying wears the engine; a restoring SV adds margin". The second is a big-M cap that limits the post-restoration value to `Ĝ_w` (with `G^max − Ĝ_w` playing the role of M). `g ≥ 0` acts as a hard rule: the engine must come off before its EGT margin is exhausted. While in the shop `u = 0`, so the state does not change.
-
-**(3) LLP life evolution and reset**
-
-```
-r[e,m,0]   = r⁰_em
-r[e,m,t+1] ≤ r[e,m,t] − c_e · u[e,t] + ℓ_m · Σ_{w : m∈R_w} x[e,t,w]
-0 ≤ r[e,m,t] ≤ ℓ_m
-```
-
-An LLP replacement adds `+ℓ_m`, and the variable's upper bound `ℓ_m` caps it, so no separate reset constraint is needed. `r ≥ 0` is the LLP life limit.
-
-**(4) Fuel penalty** — charged only on flying engines, proportional to lost margin.
-
-```
-f[e,t] ≥ φ · (G^max − g[e,t]) − φ · G^max · (1 − u[e,t]),   f[e,t] ≥ 0
-```
-
-When `u = 0` the right-hand side becomes `−φ·g ≤ 0`, deactivating the constraint.
-
-**(5) Demand coverage** — every position is filled by an owned engine, a lease, or is AOG.
-
-```
-Σ_e u[e,t] + L[t] + s[t] ≥ P                               ∀ t
-```
-
-**(6) Shop capacity**
-
-```
-Σ_e inShop(e,t) ≤ S                                        ∀ t
-```
-
-### Objective
-
-Minimize discounted total cost minus the asset value (EGT margin and remaining LLP life) left at the end of the horizon.
-
-```
-min  Σ_t δ_t · [ Σ_{e,w} C_w · x[e,t,w]           shop visits
-               + c^L   · L[t]                     spare engine lease
-               + c^chg · Σ_e y[e,t]               engine changes
-               + c^AOG · s[t]                     AOG
-               + Σ_e f[e,t] ]                     fuel deterioration
-     − κ · δ_H · [ Σ_e v^g · g[e,H] + Σ_{e,m} v^m_m · r[e,m,H] ]   terminal asset value
-```
-
-Without the terminal-value term, the model would exhibit an end-of-horizon effect: avoid SVs near the end and hand over run-down engines. The haircut `κ < 1` (0.8 in the sample) prevents the opposite: overvaluing terminal assets and triggering unnecessary SVs.
-
-### Why upper-bound-only states are exact
-
-States `g` and `r` are constrained by **upper bounds (≤) only**, not equalities. They still match the physical values because:
-
-1. States appear in the objective only through the terminal value (negative coefficient, so larger is better) and the fuel penalty `f ≥ φ(G^max − g)` (larger `g` lowers the bound). Both **only ever reward larger `g` and `r`**.
-2. On the constraint side, `g ≥ 0`, `r ≥ 0` and the next period's upper bounds only get looser as `g` and `r` grow.
-3. Therefore, for any feasible solution, raising the states to their upper bounds (the physical values) while keeping `(x, u, L, s, y)` fixed preserves feasibility and never worsens the objective.
-
-Hence an optimal solution with tight states always exists, and **the optimal plan `(x, u)` is the same as with equality constraints**. The solver may return an alternative optimum where an intermediate state sits below its physical value (e.g. just before a reset, where it has no effect on value); that is a conservative display (understating margin or remaining life) and does not affect the plan's validity. This property lets us linearize state transitions that would otherwise need `max` or `if` without adding any binary variables.
-
-### Problem size (sample data)
-
-12 engines (10 installed + 2 spares) × 48 months × 4 workscopes gives a MILP with about 2,300 binary `x`, 576 binary `u`, and 48 integer `L` variables.
-
----
-
-## 4. How to run
-
-<Steps>
-
-1. Install dependencies.
-
-   ```bash
-   cd examples/engine-mro-optimization
-   pip install -r requirements.txt
-   ```
-
-   `requirements.txt` includes `pulp`, `highspy`, and `ortools` for the SCIP backend.
-
-2. Solve the sample fleet.
-
-   ```bash
-   python solve.py data/sample_fleet.json
-   ```
-
-3. Re-solve with a different solver or assumptions as needed.
-
-   ```bash
-   # SCIP (via OR-Tools), 8 threads, 300-second limit
-   python solve.py data/sample_fleet.json --solver scip --threads 8 --time-limit 300
-
-   # Sensitivity: one shop slot, lease at 250 k$/month; write JSON
-   python solve.py data/sample_fleet.json --shop-slots 1 --lease-cost 250 --json-out plan.json
-   ```
-
-</Steps>
-
-| Option | Default | Description |
-|---|---|---|
-| `--solver highs\|cbc\|scip` | `highs` | MIP solver to use |
-| `--threads N` | solver default | Number of parallel threads |
-| `--time-limit SEC` | `120` | Time limit [s] |
-| `--gap REL` | `0.005` | Relative MIP gap used as stopping criterion |
-| `--horizon N` | from data | Override horizon [months] |
-| `--shop-slots N` | from data | Override shop capacity |
-| `--lease-cost K` | from data | Override lease rate [k$/month] |
-| `--json-out PATH` | — | Save the full solution (SV list, operation, EGT/LLP trajectories, cost breakdown) as JSON |
-| `-v`, `--verbose` | — | Show the solver log |
-
-Standard output shows the status and MIP gap, the discounted cost breakdown, the SV list (EGT margin and per-module LLP remaining at removal), KPIs and a per-engine Gantt chart.
-
-### Running through the SDK
-
-An example of handing a full run, including sensitivity cases, to an agent from a button in the planner UI:
-
-<Tabs>
-  <TabItem label="TypeScript">
-  ```typescript
-  import { AgiApiClient, WorkAGI } from "@work-with-ai/sdk";
-
-  const api = new AgiApiClient(endpoint, apiKey);
-
-  const session = await api.createSession({
-    user_id: "planner-01",
-    tool: "claude",
-    label: "engine-mro-sensitivity",
-    prompt: `
-  cd examples/engine-mro-optimization
-  pip install -r requirements.txt
-  Run these three cases, compare them in a table and save it to results/summary.md:
-    1) python solve.py data/sample_fleet.json --threads 8 --json-out results/base.json
-    2) python solve.py data/sample_fleet.json --shop-slots 1 --json-out results/slots1.json
-    3) python solve.py data/sample_fleet.json --lease-cost 250 --json-out results/lease250.json
-  Report both the relative and the absolute MIP gap for each case.`,
-  });
-
-  // Reviewer pane
-  await api.addPane(session.session_id, { tool: "claude", role: "reviewer" });
-
-  // Show the working terminal in the planner screen
-  WorkAGI.terminal({
-    container: "#mro-terminal",
-    endpoint,
-    apiKey,
-    sessionId: session.session_id,
-  });
-  ```
-  </TabItem>
-  <TabItem label="Python (direct)">
-  ```python
-  from engine_mro import load, solve
-  from engine_mro.report import text_report
-
-  data = load("data/sample_fleet.json")
-  sol = solve(data, solver="highs", time_limit=120, threads=8)
-  print(text_report(data, sol))
-  print(sol.status, sol.objective, sol.abs_gap, sol.mip_gap)
-  ```
-  </TabItem>
-</Tabs>
-
----
-
-## 5. Example results
-
-<Aside type="note" title="Example with synthetic data">
-  The following results come from the synthetic dataset `data/sample_fleet.json` (5 aircraft × 2 engines + 2 owned spares, 48 months). They are not actual figures from any real fleet or engine.
-</Aside>
-
-{/* RESULTS: filled after final solve */}
-
----
-
-## 6. Computational notes and research extensions
-
-### Reading the MIP gap
-
-A MIP solver simultaneously tracks the best feasible solution found (primal, an upper bound) and a proven lower bound (dual bound). The reported relative gap is:
-
-```
-relative gap = (primal − dual) / |primal|
-absolute gap =  primal − dual        [k$, NPV]
-```
-
-This model's objective is a **net value after subtracting a large terminal-asset credit**. Because `|primal|` is much smaller than total cost, the relative gap looks inflated compared with the real error: even when total costs are large, a few percent of a small net value can be a very small absolute difference. `Solution` exposes `dual_bound`, `abs_gap` and `mip_gap`, so **report the relative and absolute gap together**. Note that the `--gap` stopping criterion is also relative.
-
-<Aside type="caution">
-  When HiGHS is used through PuLP, PuLP reports `Optimal` even when the search was stopped by the time limit. This example reads HiGHS's own status (e.g. `Time limit reached`) and dual bound directly.
-</Aside>
-
-### Weakness of the big-M reset
-
-The EGT reset `g[e,t+1] ≤ Ĝ_w + (G^max − Ĝ_w)(1 − x)` and the LLP `+ℓ_m · x` term are classic big-M forms that lose strength when `x` is fractional in the LP relaxation. The relaxation can "do a fraction of an SV and recover a lot of state", which is the main reason the dual bound progresses slowly. Possible improvements:
-
-- Minimize M (the model already uses the tightest `G^max − Ĝ_w` and `ℓ_m`)
-- An **extended formulation** treating each interval between SVs as one column (interval variables `z[e,t₁,t₂,w]`); the relaxation becomes much stronger at the cost of O(|E|·H²·|W|) variables
-- Valid inequalities derived from LLP deadlines, such as "an SV must start by this month"
-
-### Research extensions
-
-| Extension | Summary |
-|---|---|
-| **Stochastic unscheduled removals** | Two-stage stochastic programming with scenarios for unscheduled removals (bird strike, FOD, borescope findings), or robust optimization over the number of spares |
-| **Rolling horizon** | Re-optimize monthly with the latest EGT trends and LLP consumption, freezing only the next few months; end effects are mitigated by the terminal-value term |
-| **Dantzig–Wolfe decomposition / column generation** | Columns are per-engine SV schedules; the master problem holds the linking shop-capacity and demand constraints; pricing is a per-engine dynamic program |
-| **CP-SAT** | Compare with a constraint-programming model using interval variables for TAT and a cumulative constraint for shop capacity |
-| **Module-level shop routing** | Break engines down into modules and schedule module repair lines and pools of exchange modules |
-| **Multiple shops / outsourcing** | Choose between in-house and several external MRO vendors with rates, TAT, transport time and minimum contract volumes |
-
----
 
 ## Related pages
 
-- [SDK Quickstart](/en/sdk/quickstart/) — basics of `AgiApiClient` and the terminal
-- [Knowledge Base (RAG)](/en/sdk/knowledge/) — `KnowledgeClient` in detail
-- [Pilot Mode](/en/sdk/pilot-mode/) — main terminal and agent pane UI
+- [Running Engine Maintenance Planning with AI Agents](/en/showcase/engine-shop-selection-mc/)
+- [SDK Quick Start](/en/sdk/quickstart/)
