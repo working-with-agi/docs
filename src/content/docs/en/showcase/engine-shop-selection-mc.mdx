@@ -1,0 +1,459 @@
+---
+title: Shop Quote Selection under Uncertainty
+description: Comparing engine shop quotes as "price + risk distribution" and choosing shop, workscope, induction month and spare engines with a two-stage stochastic MILP solved by Monte Carlo and SAA
+---
+
+import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
+
+<Aside type="tip" title="Part 2">
+  This page is part 2 of [Engine MRO Optimization](/en/showcase/engine-mro-optimization/). Part 1 decides *when* and *with which workscope* deterministically; this page decides **which shop** to send each engine to, under uncertainty in cost overruns, TAT delays and unscheduled removals.
+</Aside>
+
+When sending engine shop visits to external shops, comparing the quoted prices alone does not tell you where to send them. Who pays for extra work driven by teardown findings? How much can the TAT slip? If another engine fails in the meantime, are there enough spares? This showcase solves these questions as a **two-stage stochastic MILP over Monte Carlo scenarios** and decides two things at once:
+
+- the **shop, workscope and induction month** for each planned shop visit
+- the number of **spare engines to lease long-term** for the whole horizon
+
+<Aside type="caution" title="About the data">
+  All quotes, risk profiles and fleet data on this page are **synthetic and illustrative**. They are not quotes from any OEM or real shop.
+</Aside>
+
+<CardGrid>
+  <Card title="For executives" icon="rocket">
+    Compares shops by **expected cost, P90 and AOG probability** instead of the lowest quote, and puts a dollar figure (VSS) on the difference from planning with averages.
+  </Card>
+  <Card title="For researchers" icon="open-book">
+    Covers SAA, common random numbers, the expected-value benchmark, out-of-sample evaluation with closed-form recourse, the Mak–Morton–Wood gap estimate, and a parallel comparison of 7 methods with a Pareto set.
+  </Card>
+  <Card title="For architects" icon="puzzle">
+    Shows a pipeline in which shop quote PDFs go into `KnowledgeClient`, and an agent converts them to JSON and runs `run.py`.
+  </Card>
+  <Card title="Source code" icon="github">
+    In the SDK repository under `examples/engine-shop-selection-mc/` (Python + PuLP + HiGHS + NumPy).
+  </Card>
+</CardGrid>
+
+---
+
+## 1. The problem: a quote is "price + risk distribution"
+
+For the same workscope, shops differ in contract type and risk profile.
+
+| Shop (sample) | Contract | `overrun_share` | Characteristics |
+|---|---|---:|---|
+| `IN-HOUSE` in-house shop | T&M (time and material) | 1.0 | No shipping, 1 slot. The operator pays all overruns from findings |
+| `OEM-NET` OEM network shop | Fixed price | 0.0 | Higher quote but no overrun and small delays. 1 month shipping, 2 slots |
+| `IND-MRO` independent MRO | Capped T&M (50% share) | 0.5 | Cheapest quote but longer TAT and widely spread congestion delays |
+
+`overrun_share` is the share of findings-driven overrun borne by the operator, so it captures the contract type in one number: 1 for T&M, 0 for fixed price, somewhere in between for capped T&M or shared overruns. Price differences between quotes only become comparable once this share and the delay distributions are taken into account.
+
+Moreover, per-shop decisions are not independent:
+
+- If delays hit several shops in the same months that visits overlap, spares run short and aircraft go **AOG** (aircraft on ground).
+- **Unscheduled removals** during that period (bird strike, FOD, borescope findings) make the shortage worse.
+- Whether to secure spares up front with long-term leases or react with short-term leases must be decided together with shop selection.
+
+### Common random numbers
+
+Whether teardown findings exist is a property of the engine's condition and should not depend on which shop it goes to. So within a scenario, **every shop uses the same random draws** for a given engine (common random numbers). Shops differ only in how likely they are to bill the findings (`findings.prob`), the overrun distribution, and who pays (`overrun_share`). This keeps shop-to-shop differences from being buried in sampling noise. Congestion delay (`delay.shop_*`) is shared by all engines at the same shop within a scenario.
+
+---
+
+## 2. Input data
+
+### `data/fleet_visits.json` — fleet and planned visits
+
+The synthetic sample is a fleet of 10 narrow-body aircraft (20 installed positions, 21 owned engines) with 10 planned shop visits over 24 months.
+
+| Key | Meaning | Real-world data source |
+|---|---|---|
+| `horizon_months` | Planning horizon [months] | Planning cycle |
+| `installed_positions` | Positions D that must always be filled | Fleet plan (aircraft × engines) |
+| `owned_engines` | Owned engines (installed + own spares) | Asset register |
+| `short_term_lease.cost_per_month` / `max_engines` | Short-term lease (recourse) rate and cap | Lessor quotes, market availability |
+| `long_term_spare.cost_per_month` / `max_engines` | Long-term spare lease (decided up front) rate and cap | Lessor quotes |
+| `aog_cost_per_month` | Loss from an unfilled position [k$/month] | Revenue, cost of substitute capacity |
+| `unscheduled_removals.rate_per_engine_month` | Unscheduled removal rate (1/MTBUR) | In-house reliability data |
+| `unscheduled_removals.tat_months` / `tat_probs` | Distribution of off-wing months after an unscheduled removal | Repair history |
+| `workscope_build_value` | Value of the on-wing life a workscope builds beyond the horizon | Terminal value from the part 1 model, internal valuation |
+| `engines[].esn` | Engine serial number | Asset register |
+| `engines[].window` | Removal window [earliest, latest] month | From EGT trend forecasts and LLP remaining life (or part 1's output) |
+| `engines[].allowed_workscopes` | Workscopes permitted by the engine's condition | WSPG, LLP status, ADs/SBs |
+
+### `data/shop_quotes.json` — shop quotes and risk profiles
+
+| Key | Meaning | Real-world data source |
+|---|---|---|
+| `id` / `name` | Shop ID and name | — |
+| `slots` | Concurrent induction slots | Shop contract, slot availability |
+| `quotes.{WS}.price` | Quoted price incl. labour, material, LLP kits [k$] | Shop quote (budgetary or fixed price) |
+| `quotes.{WS}.tat` | Quoted TAT [months] | Shop quote |
+| `transport_cost` | Round-trip shipping, insurance, stand rental [k$/visit] | Logistics quotes |
+| `transport_months` | Extra off-wing time for shipping [months] | Logistics lead-time history |
+| `overrun_share` | Operator's share of findings overrun (T&M = 1, fixed price = 0) | Contract terms |
+| `findings.prob` | Probability that findings are billed above the quote | Past invoices from this shop / engine type |
+| `findings.overrun_mean` | Mean overrun as a fraction of the quoted price, given findings | Same |
+| `findings.overrun_cv` | Coefficient of variation of the overrun (lognormal) | Same |
+| `delay.shop_months` / `shop_probs` | Shop-wide congestion delay distribution (shared by all engines at the shop in a scenario) | Shop loading, historical TAT |
+| `delay.engine_months` / `engine_probs` | Engine-specific delay distribution (parts shortages, etc.) | Same, parts supply status |
+
+---
+
+## 3. Mathematical model: two-stage stochastic MILP
+
+This section mirrors the formulation in `shop_mc/model.py`. Money is in k$, time in months.
+
+### First and second stage
+
+```
+First stage (decided now, before uncertainty is revealed)
+  x[i] ∈ {0,1}            adopt option i = (engine e, shop k, workscope w, induction month t)
+                           t within the removal window; w allowed and quoted by shop k
+  S    ∈ {0,…,S^max}      long-term spare engines leased for the whole horizon
+
+Second stage (per scenario s and month t, after costs / delays / removals are known)
+  l[s,t] ∈ [0, l^max]     short-term lease engines
+  a[s,t] ≥ 0              uncovered positions (AOG)
+```
+
+Writing `x[e,k,w,t]` below means the same thing as `x[i]`.
+
+### Scenario-defined parameters
+
+Each Monte Carlo scenario s fixes:
+
+```
+cost[s,i]   shop visit cost borne by the operator for option i
+            = price[k,w] + transport_cost[k] + overrun_share[k] · price[k,w] · ρ[s,e,k]
+            ρ[s,e,k] = overrun ratio if findings are billed (lognormal), else 0
+down[s,i]   off-wing months of option i
+            = transport_months[k] + tat[k,w] + shop_delay[s,k] + engine_delay[s,e,k]
+A[s,i,t]    = 1  if  t_i ≤ t < t_i + down[s,i]      (off-wing in month t)
+U[s,t]      engines off-wing from unscheduled removals (Poisson arrivals × duration distribution)
+```
+
+### Constraints
+
+```
+(1) each planned visit happens exactly once
+    Σ_{i ∈ I(e)} x[i] = 1                                                ∀ e
+
+(2) planned shop capacity (quoted TAT)
+    Σ_{i : k_i = k, t_i ≤ t < t_i + tat[k,w_i]} x[i] ≤ slots[k]         ∀ k, t
+
+(3) position coverage (per scenario and month)
+    owned − Σ_i A[s,i,t] · x[i] − U[s,t] + S + l[s,t] + a[s,t] ≥ D      ∀ s, t
+```
+
+(2) is a **planning** constraint that reserves shop slots by quoted TAT, excluding shipping and delays. The actual overlaps caused by delays are priced through (3) as spare shortfall (lease and AOG cost).
+
+### Objective (risk-neutral)
+
+```
+min  c_S · T · S  −  Σ_i V[w_i] · x[i]                                   first stage
+     + (1/N) Σ_s Q_s                                                     sample average of second stage
+
+     Q_s = Σ_i cost[s,i] · x[i]  +  Σ_t ( c_l · l[s,t] + c_aog · a[s,t] )
+```
+
+`V[w]` is `workscope_build_value`, the on-wing life a workscope leaves beyond the horizon, so deeper workscopes earn larger credits. Without it, a 24-month view would always pick the cheapest PR.
+
+### CVaR option
+
+With `--cvar-weight λ` (λ > 0), the objective becomes the expectation plus CVaR of the **total cost**:
+
+```
+min  E[total cost] + λ · CVaR_α[total cost]
+
+total cost_s = c_S · T · S − Σ_i V[w_i] · x[i]  +  Q_s        (deterministic first stage + scenario cost)
+```
+
+CVaR uses the Rockafellar–Uryasev linearization:
+
+```
+min  (risk-neutral objective above)  +  λ · ( η + 1/((1−α)N) · Σ_s z[s] )
+s.t. z[s] ≥ c_S · T · S − Σ_i V[w_i] · x[i] + Q_s − η,   z[s] ≥ 0       ∀ s
+     (η free = estimate of VaR_α, α = --cvar-alpha, default 0.9)
+```
+
+The first-stage long-term spare cost and build value are identical in every scenario, but including them inside the CVaR means the spare cost is also weighted by λ. The model therefore optimizes the same "CVaR of total cost" that the out-of-sample CVaR90 measures.
+
+### Problem size (sample data)
+
+294 first-stage options (binary) plus integer `S`. With N = 200 scenarios over 24 months, the second stage has 9,600 continuous variables and 4,800 coverage constraints.
+
+---
+
+## 4. Computational pipeline
+
+```
+1. Monte Carlo          sample N scenarios (overruns, delays, unscheduled removals)  scenarios.sample
+2. SAA                  solve the two-stage stochastic MILP (default N = 200)        model.solve_saa
+3. EV plan              solve the mean-value deterministic problem (benchmark)       scenarios.mean_value
+4. Out-of-sample eval   evaluate both plans on independent scenarios (default 5,000) evaluate.evaluate
+                        → mean, P50/P90, CVaR90, AOG probability, VSS = EV − SAA
+5. Gap estimate         optimality gap from M independent SAA lower bounds and       evaluate.saa_gap
+                        the out-of-sample value (upper bound)
+```
+
+The **EV plan** solves a single deterministic scenario built from the average of 20,000 scenarios (off-wing months rounded to whole months, unscheduled removals as a fractional steady-state average). It corresponds to the traditional "plan with averages" approach; its gap to the SAA plan is the **VSS** (Value of the Stochastic Solution).
+
+For **out-of-sample evaluation**, once the first stage (x, S) is fixed the second stage has a closed form:
+
+```
+shortfall[s,t] = max(0, D − (owned − Σ_i A[s,i,t] x[i] − U[s,t] + S))
+l[s,t]         = min(shortfall[s,t], l^max)
+a[s,t]         = shortfall[s,t] − l[s,t]
+```
+
+Evaluation needs no MILP, only NumPy vector operations, so thousands of scenarios take tens of milliseconds.
+
+The **optimality gap** follows Mak–Morton–Wood:
+
+```
+lower  L̄ = (1/M) Σ_m v̂_m        v̂_m: optimal value of independent SAA problem m (solver dual bound)
+upper  Ū = out-of-sample mean cost of the candidate plan
+gap = Ū − L̄,   one-sided 95% upper limit = gap + 1.645 · sqrt( s_L² / M + s_U² )
+```
+
+The expected SAA optimal value is no greater than the true optimum (downward bias), so `L̄` is a statistical lower bound, and the candidate's out-of-sample value is an unbiased upper bound. Using the solver's dual bound for each SAA keeps the lower bound valid even if a MIP is not solved to optimality. The estimate is valid for the risk-neutral objective only and is skipped when `--cvar-weight` is set.
+
+### Monte Carlo is not "the solver"
+
+Here, Monte Carlo is used for **scenario generation** and **plan evaluation**. The MILP solver is what searches for the plan.
+
+- "Generate random candidate plans, simulate each, keep the best" cannot meaningfully search the combinations of 294 options and spare counts, and gives no optimality guarantee.
+- SAA uses a MILP to optimize **one plan** that must perform across all scenarios at once. Tail correlations, such as overlapping visits coinciding with delays, act directly through constraint (3).
+- Evaluating on the same scenarios used for optimization is optimistically biased (optimization bias). So evaluation uses **independent** scenarios, and the gap estimate checks whether the scenario count is sufficient.
+
+---
+
+## 5. Example results
+
+<Aside type="note" title="Example with synthetic data">
+  Synthetic data, seed=42, 5,000 evaluation scenarios, in k$. Not actual figures from any real shop or fleet.
+</Aside>
+
+| Plan | Mean | P90 | CVaR90 | Disruption probability | Long-term spares |
+|---|---:|---:|---:|---:|---:|
+| Quotes at face value (deterministic) | 38,345 | 43,473 | 46,599 | 47.5% | 0 |
+| Expected value (EV, deterministic) | 36,174 | 39,649 | 42,010 | 14.4% | 1 |
+| Pessimistic P90 (deterministic) | 39,687 | 39,950 | 40,466 | **0.5%** | 2 |
+| SAA risk-neutral | **35,869** | 38,592 | 40,552 | 7.6% | 1 |
+| SAA + CVaR λ=0.3 | 36,074 | 38,471 | 40,168 | 7.6% | 1 |
+| SAA + CVaR λ=1 (λ=3 gives the same plan) | 36,304 | **38,449** | **39,994** | 6.6% | 1 |
+
+"Disruption probability" is the share of scenarios with at least one month of AOG (an unfilled engine position) during the horizon. The three deterministic models are each solved on a single scenario:
+
+- **Quotes at face value**: quoted price and TAT as stated; findings overrun, delays and unscheduled removals all set to zero
+- **Expected value (EV)**: the mean over 20,000 scenarios
+- **Pessimistic P90**: the 90th percentile over 20,000 scenarios (off-wing months rounded up)
+
+What the results show:
+
+- Taking quotes at face value leads to a disruption probability of about 50%. Quotes must be treated as "price + risk distribution".
+- The value of the stochastic solution (VSS) is **about 305 k$**. Planning with averages underestimates overlapping visits coinciding with delays, and roughly doubles the disruption probability.
+- The risk-neutral SAA sends one FULL visit to the **fixed-price OEM shop**. The quote is about 1,000 k$ higher, but its stable TAT lowers the risk of cancellations in months when visits overlap.
+- Adding CVaR raises the mean by a few hundred k$ and in exchange lowers P90, CVaR90 and disruption probability (the improvement holds out of sample).
+- The pessimistic plan almost eliminates disruptions but costs about 3,800 k$ more on average. It is also a legitimate choice when disruptions must be avoided at all costs, and it is Pareto-optimal.
+- Which plan is "right" depends on how management weighs cost against disruption risk. `compare.py`, described next, supports that decision.
+
+---
+
+## 6. Comparing methods in parallel and choosing (`compare.py`)
+
+`compare.py` solves the 7 methods in the table above (quotes at face value, expected value, pessimistic P90, risk-neutral SAA, CVaR λ = 0.3 / 1 / 3) **in a process pool** and evaluates every plan on **the same evaluation sample** (5,000 scenarios by default). On the sample data this takes about 45 seconds with 4 workers (about 170 seconds sequentially).
+
+```bash
+python compare.py                  # solve 7 methods in parallel; write compare.json and compare.html
+python compare.py --workers 8
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--workers N` | CPU cores | Parallel workers |
+| `--scenarios N` / `--eval-scenarios N` | `200` / `5000` | SAA scenarios / common evaluation scenarios |
+| `--time-limit SEC` | `300` | MILP time limit per method [s] |
+| `--json-out` / `--html-out` | `compare.json` / `compare.html` | Output paths |
+| `--fragment` | — | Emit an HTML fragment without `<html>`/`<head>` |
+
+```
+          ┌── Quotes at face value ──┐
+          ├── Expected value (EV) ───┤
+          ├── Pessimistic P90 ───────┤   ProcessPoolExecutor
+ data ────┼── SAA risk-neutral ──────┼── (one HiGHS thread per worker)
+          ├── CVaR λ=0.3 ────────────┤
+          ├── CVaR λ=1 ──────────────┤
+          └── CVaR λ=3 ──────────────┘
+                       │
+                       ▼
+   evaluate all plans on one common sample of 5,000 scenarios (closed-form recourse)
+                       │
+                       ▼
+   Pareto set → compare.json + compare.html (chooser)
+```
+
+### Pareto set
+
+Plans are compared on three metrics, all minimized: **mean cost, disruption probability and CVaR90**. A plan is Pareto-optimal if no other plan is at least as good on all three and strictly better on at least one. Because every plan is evaluated on the same scenarios, differences in the metrics reflect differences between the plans themselves. Methods that produce identical plans (e.g. λ=1 and λ=3) are flagged as such.
+
+### The chooser (`compare.html`)
+
+A single self-contained HTML file with no external dependencies, showing:
+
+- a **"Keep cost down ↔ Avoid disruptions" slider** (with "cost first", "balanced" and "avoid disruptions first" presets)
+- a cost × disruption-probability scatter plot with the Pareto front
+- the total-cost distribution of the selected plan (histogram against the EV plan) and its induction schedule (colored by shop, showing expected off-wing time and the range up to P90)
+- a comparison table of all methods
+
+The slider's recommendation is computed as follows, where the weight w ∈ [0, 1] is the slider position (0 at the left, 1 at the right):
+
+```
+norm(v) = (v − min) / (max − min)        min, max over all candidates (the 7 methods)
+
+score(m) = (1 − w) · norm(mean cost_m) + w · norm(disruption probability_m)
+
+recommendation = argmin score(m)   over Pareto-optimal plans m only
+```
+
+Mean cost (k$) and disruption probability (%) have different units, so each is normalized to its relative position among the candidates before weighting. A plan that is not Pareto-optimal is never recommended, whatever the weight. The planner can also pick a plan directly from the table or charts; moving the slider returns to the recommendation.
+
+<Aside type="tip" title="How this fits the SDK">
+  With the WorkWithAGI SDK, the intended use is: an agent runs `compare.py` inside the sandbox created by `createSession` to generate the HTML, and the application shows the chooser on the planner's screen. `--fragment` outputs a fragment without `<html>`/`<head>`, which is easier to embed in an existing page. The agent lays out and evaluates the candidate methods; **the planner sets the weight with the slider and chooses the plan**.
+</Aside>
+
+---
+
+## 7. How to run
+
+<Steps>
+
+1. Install dependencies (`pulp`, `highspy`, `numpy`).
+
+   ```bash
+   cd examples/engine-shop-selection-mc
+   pip install -r requirements.txt
+   ```
+
+2. Compare the risk-neutral SAA plan (200 scenarios) with the EV plan.
+
+   ```bash
+   python run.py
+   ```
+
+3. Add gap estimation, risk aversion or your own data as needed.
+
+   ```bash
+   python run.py --replications 5                  # with statistical optimality gap
+   python run.py --cvar-weight 1.0                 # risk-averse
+   python run.py --shops my_quotes.json --json-out plan.json
+   python -m unittest discover -s tests
+   ```
+
+</Steps>
+
+| Option | Default | Description |
+|---|---|---|
+| `--fleet PATH` | `data/fleet_visits.json` | Fleet and planned visits |
+| `--shops PATH` | `data/shop_quotes.json` | Shop quotes and risk profiles |
+| `--scenarios N` | `200` | Scenarios used by SAA |
+| `--eval-scenarios N` | `5000` | Out-of-sample evaluation scenarios |
+| `--cvar-weight λ` | `0` | Risk-aversion weight (0 = risk-neutral) |
+| `--cvar-alpha α` | `0.9` | CVaR confidence level |
+| `--replications M` | `0` | SAA replications for the gap estimate (effective at 2 or more) |
+| `--seed` | `42` | Random seed |
+| `--threads N` | — | HiGHS parallel threads |
+| `--time-limit SEC` | `120` | Time limit per MILP [s] |
+| `--json-out PATH` | — | Save metrics, the SAA plan (shop, workscope, month) and long-term spare count as JSON |
+
+### Running through the SDK
+
+An example that puts the shop quote PDFs and contracts into the knowledge base, then has an agent convert them to JSON and run the analysis:
+
+<Tabs>
+  <TabItem label="TypeScript">
+  ```typescript
+  import { AgiApiClient, KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
+
+  const endpoint = "https://api.workwithagi.dev";
+  const apiKey = import.meta.env.VITE_AGI_KEY;
+
+  // 1) Quotes, contracts and history into the knowledge base
+  const kb = new KnowledgeClient(endpoint, apiKey);
+  await kb.upload(inHouseQuotePdf, "quote-in-house");
+  await kb.upload(oemQuotePdf, "quote-oem-net");
+  await kb.upload(indMroQuotePdf, "quote-ind-mro");
+  await kb.upload(overrunHistoryCsv, "findings-overrun-history");
+
+  // 2) Retrieve excerpts on contract type and overrun terms
+  const terms = await kb.context(
+    "quoted price, TAT and overrun cost terms (T&M, fixed price, cap) for each shop",
+    10,
+  );
+
+  // 3) Ask the agent to build the JSON and run the analysis
+  const api = new AgiApiClient(endpoint, apiKey);
+  const session = await api.createSession({
+    user_id: "planner-01",
+    tool: "claude",
+    label: "shop-selection-mc",
+    prompt: [
+      "cd examples/engine-shop-selection-mc && pip install -r requirements.txt",
+      "Create my_quotes.json in the same format as data/shop_quotes.json from the excerpts below.",
+      "Derive overrun_share from contract terms and findings/delay from history; record your reasoning in notes.md.",
+      "Then run python run.py --shops my_quotes.json --replications 5 --json-out plan.json",
+      "and summarize the VSS against the EV plan and the optimality gap.",
+      "--- excerpts ---",
+      terms.context,
+    ].join("\n"),
+  });
+
+  // 4) Reviewer for the assumptions
+  await api.addPane(session.session_id, { tool: "claude", role: "reviewer" });
+
+  // 5) Embed in the procurement team's screen
+  WorkAGI.terminal({
+    container: "#shop-selection-terminal",
+    endpoint,
+    apiKey,
+    sessionId: session.session_id,
+  });
+  ```
+  </TabItem>
+  <TabItem label="Python (direct)">
+  ```python
+  from shop_mc import evaluate, load, mean_value, sample, solve_saa
+
+  p = load("data/fleet_visits.json", "data/shop_quotes.json")
+  saa = solve_saa(p, sample(p, 200, seed=42))
+  ev_plan = solve_saa(p, mean_value(p, seed=49))
+
+  sc_out = sample(p, 5000, seed=42 + 999)
+  e_saa, e_ev = evaluate(p, saa, sc_out), evaluate(p, ev_plan, sc_out)
+  print("VSS:", e_ev.mean - e_saa.mean, "k$")
+  ```
+  </TabItem>
+</Tabs>
+
+<Aside type="caution">
+  Extracting `overrun_share` and findings distributions from quotes involves interpreting contracts. Always have procurement and contracts staff review the agent's output.
+</Aside>
+
+---
+
+## 8. Extensions
+
+| Extension | Summary |
+|---|---|
+| **Connect to part 1** | Feed the integrated plan from [part 1](/en/showcase/engine-mro-optimization/) into `window` / `allowed_workscopes` / `workscope_build_value`, deciding "when and what" and "where" hierarchically |
+| **Multi-stage (rolling) re-optimization** | Re-optimize remaining visits as information arrives, e.g. firm quotes after teardown inspection |
+| **L-shaped method (Benders decomposition)** | Split the second stage into per-scenario subproblems to scale the scenario count; also helps tail estimation for CVaR |
+| **Uncertain shop slots and shipping** | Make shop capacity itself uncertain (congestion from other customers) and model shipping lead time as a distribution |
+
+---
+
+## Related pages
+
+- [Engine MRO Optimization (part 1)](/en/showcase/engine-mro-optimization/)
+- [Knowledge Base (RAG)](/en/sdk/knowledge/) — `KnowledgeClient` in detail
+- [SDK Quickstart](/en/sdk/quickstart/)

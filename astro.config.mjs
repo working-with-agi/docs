@@ -92,6 +92,11 @@ export default defineConfig({
               translations: { ja: "航空エンジン整備計画の最適化" },
               link: "/showcase/engine-mro-optimization/",
             },
+            {
+              label: "Shop Quote Selection under Uncertainty",
+              translations: { ja: "工場見積もり比較と不確実性下の入場計画" },
+              link: "/showcase/engine-shop-selection-mc/",
+            },
           ],
         },
         {

@@ -5,6 +5,10 @@ description: Jointly optimizing removal timing, workscope and spare engines as a
 
 import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
+<Aside type="tip" title="Part 1">
+  This page is part 1. Part 2, [Shop Quote Selection under Uncertainty](/en/showcase/engine-shop-selection-mc/), decides **which shop** each planned visit goes to, under uncertainty in cost overruns, TAT delays and unscheduled removals.
+</Aside>
+
 Aircraft engine maintenance planning couples three decisions tightly: *when to remove an engine*, *what to do in the shop*, and *which engine flies in the meantime*. This showcase formulates all three as a **single mixed-integer linear program (MILP)** and shows how AI agents on the WorkWithAGI SDK take care of data gathering, model execution and constraint review.
 
 <Aside type="caution" title="About the data">

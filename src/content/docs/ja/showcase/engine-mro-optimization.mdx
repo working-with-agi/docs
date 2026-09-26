@@ -5,6 +5,10 @@ description: 取卸し時期 × ワークスコープ × 予備エンジンを 1
 
 import { Tabs, TabItem, Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
+<Aside type="tip" title="第1弾">
+  本ページは第1弾です。第2弾 [工場見積もり比較と不確実性下の入場計画](/ja/showcase/engine-shop-selection-mc/) では、本ページで決めた入場を **どの工場に出すか** を、費用超過・TAT 遅延・非計画取卸しの不確実性のもとで決めます。
+</Aside>
+
 航空エンジンの整備計画は、「いつ外すか」「何をやるか」「その間どのエンジンで飛ばすか」という 3 つの意思決定が強く結合した問題です。本ショーケースでは、これらを **1 本の混合整数線形計画 (MILP)** として定式化し、WorkWithAGI SDK 上の AI エージェントがデータ収集・モデル実行・制約レビューまでを担う構成を紹介します。
 
 <Aside type="caution" title="データについて">
