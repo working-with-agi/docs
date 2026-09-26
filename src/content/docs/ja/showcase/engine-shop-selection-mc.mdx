@@ -10,7 +10,7 @@ import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
 計算そのもの（確率計画・モンテカルロ）は SDK リポジトリのサンプルにある Python スクリプトが担います。SDK が担うのは、その周りの **データを集める → エージェントが解く → 結果を人に見せて判断してもらう → 次の月にまた回す** という流れです。
 
 <Aside type="caution" title="データについて">
-  本ページの数値はすべて、SDK リポジトリのサンプル（`examples/engine-shop-selection-mc/`）を **合成データ** で実行した例です（737-800 相当 62 機・装着 124 基・保有 136 基・2 年間の入場予定 44 件、単位 k$）。OEM や実在する工場・航空会社の見積もりや実績ではありません。結果は前提に強く依存するため、実データで較正してから使ってください。
+  本ページの数値はすべて、SDK リポジトリのサンプル（`examples/engine-shop-selection-mc/`）を **合成データ** で実行した例です（737-800 相当 76 機＝本体 62 ＋ 地域子会社 14、月ごとの必要装着数 120〜148 基、保有 166 基、定常の入場 年 28.7 件、次の 24 か月の入場予定 45 件、単位 k$）。OEM や実在する工場・航空会社の見積もりや実績ではありません。結果は前提に強く依存するため、実データで較正してから使ってください。
 </Aside>
 
 ---
@@ -21,14 +21,14 @@ import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
   <Card title="今月決めることの一覧" icon="warning">
     毎月の実行で、**今月決めなければ間に合わないエンジン** と、その理由（工場の枠予約・LLP キットの調達リードタイム）、急いだ／待った場合のコスト差が出ます。
   </Card>
-  <Card title="結論つきの報告書" icon="document">
-    要望（欠航確率目標、予備バッファ、年度予算、最低発注量など）はすべては満たせません。優先順位に沿って **推奨案・今決めること・承認事項** を結論として書いた報告書（`report.html`）を出します。
+  <Card title="年間基準と、そこからの増減" icon="document">
+    年間の「暗黙の合意」を **基準計画** として版つきで固定し、どの問いにも「基準から総コスト・欠航確率・入場件数・年度別支出がいくら動くか」で答えます。報告書（`report.html`）は優先順位に沿って **推奨案・今決めること・承認事項** を結論として書きます。
   </Card>
-  <Card title="判断ルーム" icon="approve-check">
-    決めるべき項目ごとに **承認／保留／差し戻し** を共有し、横の AI パネルに「E-104 を来月に回したら？」と分析結果について質問できる画面（`room.html`）です。
+  <Card title="判断ルーム（GUI）" icon="approve-check">
+    決めるべき項目ごとに **承認／保留／差し戻し** を共有し、基準からの増減を見ながら、横の AI パネルに「E-104 を来月に回したら？」と質問できる画面（`build_room.py` → `room.html`）です。
   </Card>
-  <Card title="並列の what-if" icon="random">
-    「MRO が混んだら」「LLP キットが逼迫したら」「中寿命エンジンが安く買えたら」を **複数のエージェントセッションで並列に** 解き、同じ評価シナリオで比べます。
+  <Card title="もしも分析（GUI）" icon="random">
+    中古エンジンの価格、MRO 混雑、LLP 逼迫など確定できない条件を **スライダーで動かし**、最適化が選ぶ打ち手とコスト・欠航確率の変化をその場で見て、AI に説明させる画面（`build_whatif.py` → `whatif.html`）です。裏の計算は複数のエージェントセッションで並列に回します。
   </Card>
 </CardGrid>
 
@@ -37,15 +37,15 @@ import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
 ## 構成：SDK のどの部品を使うか
 
 ```
- ① ナレッジ                       ② エージェント（サンドボックス）          ③ 出力
+ ① ナレッジ                       ② エージェント（サンドボックス）          ③ 出力（GUI 層）
  ─────────────────────────       ─────────────────────────────────         ──────────────────────
- KnowledgeClient                  AgiApiClient.createSession               報告書 report.html
-   upload()  見積書 PDF・契約書   ─►  planner  : データ整形、計算の実行    ─►   （結論・承認事項）
-   upload()  ショップマニュアル        addPane({ role: "reviewer" })             判断ルーム room.html
-   upload()  信頼性データ CSV          reviewer : 前提と契約解釈の点検          （承認共有＋AI 相談）
-   connect() SharePoint / Drive       並列：what-if ごとに別セッション         選択画面 compare.html
-             （schedule で定期同期）   Promise.all([createSession, ...])        （手法の比較）
-   context() 抜粋をプロンプトへ                                                WorkAGI.terminal で
+ KnowledgeClient                  AgiApiClient.createSession               判断ルーム room.html
+   upload()  見積書 PDF・契約書   ─►  planner  : データ整形、計算の実行    ─►   （承認共有＋増減＋AI 相談）
+   upload()  ショップマニュアル        addPane({ role: "reviewer" })             もしも分析 whatif.html
+   upload()  信頼性データ CSV          reviewer : 前提と契約解釈の点検          （スライダー＋AI 説明）
+   connect() SharePoint / Drive       並列：what-if ごとに別セッション         報告書 report.html
+             （schedule で定期同期）   Promise.all([createSession, ...])        選択画面 compare.html
+   context() 抜粋をプロンプトへ       基準：baseline.py freeze / compare       WorkAGI.terminal で
                                                                               作業の様子を埋め込み
           ▲                                                                          │
           │                                                                          ▼
@@ -60,27 +60,62 @@ import { Aside, Card, CardGrid } from "@astrojs/starlight/components";
 | `KnowledgeClient.connect / sync`（`schedule` 付き） | **SDK にある** | SharePoint・Google Drive などの見積書フォルダを定期同期する |
 | `AgiApiClient.createSession / addPane / destroySession` | **SDK にある** | サンドボックスでエージェントを起動し、planner と reviewer の役割ペインを並べる |
 | `WorkAGI.api / terminal / connect` | **SDK にある** | API クライアントの作成、作業ターミナルの画面埋め込み、ヘッドレス接続 |
-| 報告書・選択画面・判断ルームの HTML | **サンプルにある** | `decide.py` / `compare.py` / `build_room.py` がサンドボックス内で生成する 1 ファイルの HTML |
+| GUI：判断ルーム（`build_room.py`） | **サンプルにある** | 決めるべき項目ごとの承認／保留／差し戻しの共有、基準からの増減、分析結果に答える AI パネル |
+| GUI：もしも分析（`build_whatif.py`） | **サンプルにある** | 確定できない条件をスライダーで動かし、事前計算した最適化結果から打ち手とコストの変化を即座に表示、AI が説明 |
+| 報告書・選択画面（`decide.py` / `compare.py`） | **サンプルにある** | サンドボックス内で生成する 1 ファイルの HTML |
+| 基準の固定と増減（`baseline.py freeze / compare`） | **サンプルにある** | 年間基準を入力の指紋つきで JSON に固定し、②〜⑤ の問いを並列に解いて増減表を出す |
 | オブジェクトストレージ（計画と入力の版管理） | *提案* | 月ごとの計画・前提を版として残し、「先月からの差分」を出す |
 | 計算ジョブの実行基盤 | *提案* | 数十分かかる並列求解をセッションの外で走らせ、終わったら通知する |
 | MCP ツール（計画の照会・承認の書き込み） | *提案* | 判断ルームの AI パネルや他のエージェントから計画を問い合わせる |
 | 定期実行・通知（Slack・カレンダー）・会議メモのイベント | *提案* | 月次実行と Secretary.io の会議メモをきっかけに再計算し、判断期限を通知する |
 
+**既知の制約**（例を作る中で見つかった現在の SDK の不足。`REQUIREMENTS.md` の S1〜S6）
+
+| # | 制約 | 影響 |
+|---|---|---|
+| S1 | SDK の入口が常に xterm を読み込むため、Node のスクリプトからそのまま使えない（実装例は esbuild で束ねて回避）。Node 用の入口が必要 | サーバー側・定期実行からの利用 |
+| S2 | セッションの出力やファイルを REST で読めない。実行中のエージェントに追加の指示も送れない | 結果の取り込み、会話の継続 |
+| S3 | `addPane` に `prompt` がなく、reviewer などの 2 つ目のペインに指示を渡せない | 複数エージェントの役割分担 |
+| S4 | `WorkAGI` に `KnowledgeClient` を作る入口がない（`new KnowledgeClient(...)` で直接作る） | 一貫した使い勝手 |
+| S5 | セッションや文書にメタデータを付けられない（ラベルと ID の命名で区別するしかない） | 版管理、基準との対応付け |
+| S6 | 同期コネクタの設定キー、`schedule` の時間帯、`prompt` の渡され方、既存 ID でのアップロードの上書き挙動が文書化されていない | 実運用の前提 |
+
 <Aside type="note" title="TypeScript の実装例">
-  以下の断片をつなげた実装例を `examples/engine-mro-agent/`（`src/ingest.ts` 取り込み、`src/run-monthly.ts` 月次実行、`src/ui.ts` 画面埋め込み）として準備しています。本ページのコードはすべて、現在の SDK（`@work-with-ai/sdk`）にある API だけを使っています。
+  以下の断片は、SDK リポジトリの [`examples/engine-mro-agent/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-mro-agent) から抜き出して簡略化したものです（`src/ingest.ts` ナレッジ取り込みと月次同期、`src/run-monthly.ts` 月次の planner / reviewer セッション、`src/ui.ts` 計画担当者の画面）。使っているのは現在の SDK（`@work-with-ai/sdk`）にある API だけです。
+
+  ```bash
+  npm run ingest -- --pdf-dir ./manuals --drive-folder <FOLDER_ID>   # 取り込み＋見積書フォルダの月次同期
+  npm run run-monthly -- --month 2026-10                            # 今月の planner + reviewer を起動
+  npm run serve                                                     # 計画担当者の画面（ターミナル埋め込み）
+  ```
 </Aside>
 
-共通の準備:
+共通の準備（接続先とキーは環境変数から読みます）:
 
 ```typescript
 import { KnowledgeClient, WorkAGI } from "@work-with-ai/sdk";
 
-const endpoint = "https://api.workwithagi.dev";
-const apiKey = import.meta.env.VITE_AGI_KEY;
+const endpoint = process.env.WORKWITHAI_ENDPOINT!;
+const apiKey = process.env.WORKWITHAI_API_KEY!;
+const userId = process.env.WORKWITHAI_USER!;
 
-const kb = new KnowledgeClient(endpoint, apiKey);
+const kb = new KnowledgeClient(process.env.WORKWITHAI_KNOWLEDGE_ENDPOINT ?? endpoint, apiKey);
 const api = WorkAGI.api(endpoint, apiKey);
 const EXAMPLE = "cd examples/engine-shop-selection-mc && pip install -r requirements.txt";
+```
+
+取り込み（`src/ingest.ts`）: 文書 ID をファイルパスから決めるので、再実行しても同じ文書が差し替わるだけです。見積書フォルダは月次の同期にします。
+
+```typescript
+const file = new File([await readFile(path)], basename(path), { type: "application/pdf" });
+await kb.upload(file, "engine-mro--pdf-quote-oem-net-pdf");
+
+await kb.connect({
+  provider: "google-drive",
+  name: "engine-mro shop quotes",
+  config: { folder_id: driveFolderId },
+  schedule: "0 3 1 * *",            // 毎月 1 日 03:00、月次の再計算の直前
+});
 ```
 
 ---
@@ -92,35 +127,45 @@ const EXAMPLE = "cd examples/engine-shop-selection-mc && pip install -r requirem
 | **業務の問い** | 平常時なら 1 年に何件入場し、いくら使い、予備は何基あれば足りるのか。予算を組むときに皆が「だいたいこのくらい」と合意している数字を、根拠つきで持ちたい |
 | **誰が使う** | 整備計画部門・財務（年度予算の策定）、経営層（中期計画） |
 
-**SDK での流れ** — 信頼性データと工場実績をナレッジに入れ、エージェントに 20 年のライフサイクル・シミュレーションを回させて、基準値と「いまのフリートの状態」を作らせます。
+**SDK での流れ** — 信頼性データと工場実績をナレッジに入れ、エージェントに 20 年のライフサイクル・シミュレーションを回させて「いまのフリートの状態」を作り、年間基準を **版つきで固定** させます。
 
 ```typescript
 await kb.upload(reliabilityCsv, "reliability-mtbur");     // 非計画取卸し率・EGT 劣化
 await kb.upload(shopHistoryCsv, "shop-visit-history");    // 過去の入場・費用・TAT
 
 const baseline = await api.createSession({
-  user_id: "planner-01",
+  user_id: userId,
   tool: "claude",
-  label: "annual-baseline",
+  label: "annual-baseline-2026-10",
   prompt: [
     EXAMPLE,
-    "python lifecycle.py --fleet-out data/fleet_visits_lifecycle.json を実行し、",
-    "年間の入場件数（ワークスコープ別）・整備費・棚にある予備の数を表にしてください。",
+    "python lifecycle.py --fleet-out data/fleet_visits_lifecycle.json",
+    "python baseline.py freeze --out baselines/2026-10.json",
+    "を実行し、基準の期待総コスト・欠航確率・入場件数・年度別の件数と支出を表にしてください。",
     (await kb.context("非計画取卸し率、EGT マージンの劣化、ワークスコープ別の費用と TAT", 8)).context,
   ].join("\n"),
 });
 ```
 
-**得られるもの**
+`baseline.py freeze` は基準を入力データの指紋つきで保存します。以降の月は `baseline.py compare --baseline baselines/2026-10.json` で ②〜⑤ の問いを並列に解き直し、増減表を出します。基準を固定した後に入力データが変わると、`compare` がその旨を警告します。
 
-- 年間の入場件数・整備費・予備の水準（定常状態の値）。これを **基準計画** として固定し、以降のユースケースはすべて「基準からの増減」で示します。
-- 2 年間の計画窓の入力（`fleet_visits_lifecycle.json`）。エンジンが白紙から始まるのではなく、過去の運用が作り出す状態から始まります（サンプルでは 2 年間の入場予定 44 件、合成データ）。
+**得られるもの**（合成データ）
+
+| 項目 | 基準（計画の正本） |
+|---|---|
+| 期待総コスト | 157,910 k$ |
+| 欠航確率 | 0.1% |
+| 次の 24 か月の入場 | 45 件 |
+| 年度別 | FY2026 12 件・79,669 k$ ／ FY2027 25 件・171,480 k$ ／ FY2028 8 件・52,649 k$ |
+| 定常値（20 年シミュレーション） | 年 28.7 件・1.85 億ドル |
+
+以降のユースケースはすべて、この基準からの増減で示します。
 
 <Aside type="note">
-  基準計画を版として固定して差分を自動で出す部分は、オブジェクトストレージの提案に含まれます。現在のサンプルでは、`lifecycle.py` の定常値を予算の基準に使うところまでです。
+  基準は現在 `baselines/*.json` というファイルで版を管理しています。基準や月ごとの計画を SDK 側で版として保存・比較する仕組みは、オブジェクトストレージの提案に含まれます（既知の制約 S5 も参照）。
 </Aside>
 
-**使う分析スクリプト**: `lifecycle.py`
+**使う分析スクリプト**: `lifecycle.py`、`baseline.py freeze`
 
 ---
 
@@ -134,30 +179,47 @@ const baseline = await api.createSession({
 **SDK での流れ** — planner が計算と報告書を作り、reviewer が前提を点検し、作業の様子は計画担当者の画面に埋め込みます。
 
 ```typescript
+// src/run-monthly.ts（簡略化）
+const tools = await api.listTools();
+if (!tools.claude?.available) throw new Error("claude が使えません");
+
+const context = (await Promise.all(
+  ["shop TAT delays", "LLP kit lead time", "shop quote revisions and expedite fees",
+   "unscheduled engine removals this month"].map((q) => kb.context(q, 5)),
+)).map((r) => r.context).join("\n\n");
+
 const month = await api.createSession({
-  user_id: "planner-01",
+  user_id: userId,
   tool: "claude",
-  label: "monthly-2026-10",
-  prompt: [
-    EXAMPLE,
-    "python compare.py --workers 4 --fragment を実行し、7 つの解き方を比べてください。",
-    "続けて python decide.py と python build_room.py を実行し、report.html と room.html を作成。",
-    "今月決めるべきエンジン、その判断期限と理由、承認事項を 10 行以内で要約してください。",
-  ].join("\n"),
+  label: "engine-mro-monthly-2026-10",           // 同じ月の二重起動はラベルで検出して防ぐ
+  prompt: plannerPrompt({ month: "2026-10", context }),
+  // lifecycle → explore → actions → decide → build_room を runs/2026-10/ に実行し、
+  // summary.md（今月決めること・承認事項・基準との差分）と review-brief.md を書く
 });
 
-await api.addPane(month.session_id, { tool: "claude", role: "reviewer" }); // 前提・例外理由の点検
-
-WorkAGI.terminal({ container: "#planner-terminal", endpoint, apiKey, sessionId: month.session_id });
+await api.addPane(month.session_id, { tool: "claude", role: "reviewer" });
 ```
 
-**得られるもの**（基準計画からの差分、合成データ）
+計画担当者の画面（`src/ui.ts`）では、同じセッションに接続して作業を見守り、必要なら指示を足します。
 
-- **今月決めるエンジン**：確率計画（SAA）で 1 基。残りは判断期限まで待てるので、分解検査の結果や見積もりの更新を待ってから決めればよい、と明示されます。
-- **欠航確率**：見積もりを額面どおりに信じた計画は 77.9%、平均値で作った計画でも 36.5%。確率計画では 13.1%、リスク回避（CVaR λ=1）を加えると 6.9% に下がります。平均コストは見積もりどおりの計画より約 7,300 k$ 低くなります（146,477 → 139,174 k$）。
-- 期限前に取り卸す例外がある場合は、その理由（要監視エンジン、繁忙期の回避など）が報告書と判断ルームに並びます。
+```typescript
+WorkAGI.terminal({ container: "#terminal", endpoint, apiKey, sessionId: month.session_id, theme: "dark" });
+```
 
-**使う分析スクリプト**: `compare.py`（7 手法の並列比較と選択画面）、`decide.py`（報告書）、`build_room.py`（判断ルーム）
+<Aside type="note" title="現在の SDK での注意">
+  `addPane` には `prompt` を渡せないため、reviewer への指示は planner が書く `review-brief.md` を担当者がペインに貼り付けます。また REST からセッションの成果物を読む手段がないため、完了は画面か `runs/2026-10/summary.md` で確認します。いずれも実装例の README に「SDK の制約」として整理しています。
+</Aside>
+
+**得られるもの**（基準からの増減、合成データ、`baseline.py compare`）
+
+| 問い | 総コスト | 欠航確率 | 入場件数 | 年度別支出 | 前倒し |
+|---|---:|---:|---:|---|---:|
+| 外部工場の TAT が 1 か月延びたら（再計画） | +205 k$ | −0.1pt | ±0 | FY2027 −9,813 k$ → FY2028 +9,974 k$ | +1 か月 |
+
+- 工場が混んでも、計画し直せば総コストはほぼ変わらず、**支出が FY2027 から FY2028 へ移る** ことが分かります。予算部門との調整事項として判断ルームに並びます。
+- 今月決めなければ間に合わないエンジンと判断期限、期限前に取り卸す例外とその理由（要監視エンジン、繁忙期の回避など）が報告書と判断ルームに並びます。
+
+**使う分析スクリプト**: `compare.py`（7 手法の並列比較と選択画面）、`decide.py`（報告書）、`baseline.py compare`（増減）、`build_room.py`（判断ルーム）
 
 ---
 
@@ -180,7 +242,7 @@ const terms = await kb.context(
   "各工場の見積価格、通貨、TAT、超過費用の負担条件、枠予約リードタイム、特急料金、最低発注件数", 10);
 
 const shops = await api.createSession({
-  user_id: "procurement-01",
+  user_id: userId,
   tool: "claude",
   label: "shop-selection",
   prompt: [
@@ -194,10 +256,15 @@ const shops = await api.createSession({
 await api.addPane(shops.session_id, { tool: "claude", role: "reviewer" });
 ```
 
-**得られるもの**（合成データ）
+**得られるもの**（基準からの増減、合成データ）
 
-- 工場ごとの件数と、見積価格ではなく **期待コスト・P90・欠航確率** での比較。平均値で作った計画に比べ、不確実性を入れた計画は平均で約 1,400 k$ 安くなります（140,596 → 139,174 k$）。
-- 契約の打ち手ごとの差分：予備エンジンの追加リースは、どの条件でも最適化に選ばれませんでした。**エンジンプール契約や別機種での代替運航のほうが安く欠航リスクを下げる** ためです。
+| 問い | 総コスト | 欠航確率 | 入場件数 | 年度別支出 | 前倒し |
+|---|---:|---:|---:|---|---:|
+| アジア独立系を固定価格にしたら | +679 k$ | −0.1pt | ±0 | FY2026 +1,893 ／ FY2027 −1,587 ／ FY2028 +58 k$ | +7 か月 |
+| OEM 工場の枠を 2 つ事前確保したら | +800 k$ | +0.0pt | ±0 | ±0 | ±0 |
+| エンジン・プール契約を結んだら | +700 k$ | −0.1pt | ±0 | ±0 | ±0 |
+
+- 3 つの契約の打ち手はいずれも **+679〜+800 k$ のコスト増で、欠航確率はほぼ変わりません**（基準が 0.1% と低いため）。基準の条件では「保険」としての価値しかなく、⑤ のストレス下でどう効くかと合わせて判断することになります。
 
 <Aside type="caution">
   見積書から超過費用の負担割合や枠予約リードタイムを読み取る作業は契約解釈を伴います。エージェントの出力（`notes.md`）は必ず調達・契約担当者が確認してください。
@@ -222,11 +289,12 @@ const whatIfs = {
   breakeven: "python sensitivity.py",                // 中寿命エンジン価格の損益分岐、予備の厚さ × 代替運航
   transition: "python actions.py",                   // 737-8 受領が進むケースを含む打ち手の比較
 };
+// 3 つが終わったら python build_whatif.py --baseline baselines/2026-10.json で whatif.html を作る
 
 const sessions = await Promise.all(
   Object.entries(whatIfs).map(([label, cmd]) =>
     api.createSession({
-      user_id: "asset-01",
+      user_id: userId,
       tool: "claude",
       label: `asset-${label}`,
       prompt: `${EXAMPLE}\n${cmd}\n結果から、答えが切り替わる条件（しきい値）を 5 行で要約してください。`,
@@ -234,13 +302,22 @@ const sessions = await Promise.all(
 );
 ```
 
-**得られるもの**（合成データ）
+**得られるもの**（基準からの増減、合成データ）
 
-- **判断を最も大きく分けるのは中寿命エンジンの正味価格**：5,500 k$ 以下なら入場の 3 分の 1 以上を中古エンジンとの入れ替えにするのが得、6,500 k$ 以上なら工場整備のみ。市場見積もりの取得が最優先の行動になります。
-- 予備が薄い場合（保有 156 基の条件）、他機種での代替がないと欠航確率は最大 51%、代替ありでは 6% に下がります。
-- 新機種の受領が進むケースでは、整備せずに部品取りに回す案が打ち手の候補に入ります。
+| 問い | 総コスト | 欠航確率 | 入場件数 | 年度別支出 |
+|---|---:|---:|---:|---|
+| 中寿命エンジンを最大 8 基使えたら | −10,306 k$ | −0.1pt | −8（中寿命 +8） | FY2026 −10,848 ／ FY2027 −44,811 ／ FY2028 +15,360 k$ |
+| 予備エンジンを 2 基増やしたら | +5,758 k$ | −0.1pt | ±0 | ±0 |
+| 整備せず部品取りで打ち切れるなら | −79,639 k$ | +0.8pt | −14（部品取り +14） | FY2026 −12,414 ／ FY2027 −86,873 ／ FY2028 −62,580 k$ |
+| 737-8 の受領が進む中で部品取りを使うなら | −145,161 k$ | −0.1pt | −26（部品取り +26） | FY2026 −59,087 ／ FY2027 −169,205 ／ FY2028 −46,228 k$ |
 
-**使う分析スクリプト**: `explore.py`、`sensitivity.py`、`actions.py`
+- 中寿命エンジンは工場整備 8 件を置き換えて総コストが −10,306 k$ 下がり、FY2027 の支出の山が小さくなります（一部は FY2028 に移る）。
+- 部品取りは大きくコストを下げますが、機材更新がないと **欠航確率が +0.8pt** 上がります。737-8 の受領が進むなら欠航確率を上げずに 26 件を打ち切れます。
+- 予備の追加は +5,758 k$ で、基準の条件では割に合いません。
+
+これらの条件は「もしも分析」画面（`whatif.html`）のスライダーで動かして見られます。
+
+**使う分析スクリプト**: `explore.py`、`sensitivity.py`、`actions.py`、`baseline.py compare`、`build_whatif.py`（もしも分析画面）
 
 ---
 
@@ -258,7 +335,7 @@ const sessions = await Promise.all(
 const notes = await kb.search("エンジン工場 TAT 遅延 LLP 納期", 5);
 
 const stress = await api.createSession({
-  user_id: "planner-01",
+  user_id: userId,
   tool: "claude",
   label: "risk-backlog",
   prompt: [
@@ -271,13 +348,18 @@ const stress = await api.createSession({
 });
 ```
 
-**得られるもの**（合成データ）
+**得られるもの**（基準からの増減、合成データ）
 
-- 前提 4 ケース（基準／MRO 混雑：外部工場 TAT +1 か月／LLP 逼迫：手持ち半減・調達 12 か月／複合ストレス）それぞれでの、基準計画からのコストと欠航確率の変化。
-- **LLP 逼迫** のときは、下位の要望（予備を増やさない、キットは手持ち）を諦めれば、欠航確率目標・予備バッファ・予算は守れます。
-- 全コストを悲観値（P90）で見ると、年度予算・LLP キット・工場枠を同時に満たす計画は存在しません。予算が「平均的にしか」足りていないことのシグナルとして報告書に出ます。
+| 問い | 総コスト | 欠航確率 | 年度別支出 | 前倒し |
+|---|---:|---:|---|---:|
+| LLP キットが逼迫したら（手持ち半減・調達 12 か月） | +9,321 k$ | +0.0pt | FY2027 +366 k$ | −1 か月 |
+| LLP 逼迫にキット先行発注で備えたら | +9,201 k$ | +0.0pt | FY2027 +366 k$ | −1 か月 |
+| 複合ストレス（MRO 混雑＋LLP 逼迫＋故障増） | +11,478 k$ | +0.7pt | FY2026 +7,812 ／ FY2027 −2,281 ／ FY2028 −5,054 k$ | +44 か月 |
 
-**使う分析スクリプト**: `decide.py`（前提ケースと要望の優先順位）、`actions.py`（MRO 混雑ケースでの打ち手）、`explore.py`
+- LLP 逼迫は欠航確率には効かず、**コストで +9,321 k$** 効きます。キットの先行発注で備えても +9,201 k$ で、ほとんど取り戻せません。
+- 複合ストレスでは欠航確率が +0.7pt 上がり、前倒しが合計 44 か月に増えて支出が FY2026 に寄ります。
+
+**使う分析スクリプト**: `baseline.py compare`（増減）、`decide.py`（前提ケースと要望の優先順位）、`actions.py`、`explore.py`
 
 ---
 
@@ -287,7 +369,7 @@ const stress = await api.createSession({
 
 - [`examples/engine-shop-selection-mc/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-shop-selection-mc) — 工場見積もりを価格 ＋ リスク分布として扱う二段階確率計画、報告書・判断ルーム・分析スクリプト一式（Python + PuLP + HiGHS + NumPy）
 - [`examples/engine-mro-optimization/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-mro-optimization) — 取卸し時期 × ワークスコープ × 予備エンジンの統合計画モデル（[第1弾](/ja/showcase/engine-mro-optimization/)）
-- `examples/engine-mro-agent/` — 本ページの TypeScript 断片をつないだ実装例（準備中）
+- [`examples/engine-mro-agent/`](https://github.com/working-with-agi/sdk/tree/claude/aircraft-engine-repair-optimization-8oww5m/examples/engine-mro-agent) — 本ページの TypeScript 断片の元になった実装例（取り込み・月次実行・画面）
 
 要点だけ示すと、計算は次の 3 段です。
 
